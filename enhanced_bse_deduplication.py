@@ -8,7 +8,6 @@ import hashlib
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 import logging
-from modular_config import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +18,7 @@ class EnhancedBSEDeduplication:
     """
 
     def __init__(self):
-        self.config = get_config()
-        self._verbose = self.config.BSE_VERBOSE
+        self._verbose = os.environ.get('BSE_VERBOSE', '0') == '1'
 
         if self._verbose:
             logger.info("🔧 ENHANCED BSE DEDUPLICATION: Using existing seen_announcements table")

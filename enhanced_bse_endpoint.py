@@ -3,12 +3,13 @@ Enhanced BSE Endpoint using Existing seen_announcements Table
 Prevents duplicates by enhancing existing database structure
 """
 
+import os
 import time
 import uuid
 from datetime import datetime, timedelta
+from typing import List, Dict
 from flask import Blueprint, request, jsonify
 import logging
-from modular_config import get_config
 from enhanced_bse_deduplication import get_enhanced_bse_deduplication
 
 logger = logging.getLogger(__name__)
@@ -18,8 +19,7 @@ enhanced_bse_bp = Blueprint('enhanced_bse', __name__, url_prefix='/cron')
 
 def authenticate_cron_request():
     """Authenticate cron request"""
-    config = get_config()
-    expected_key = config.CRON_SECRET_KEY
+    expected_key = os.environ.get('CRON_SECRET_KEY')
     provided_key = request.args.get('key')
     return provided_key == expected_key
 
@@ -40,8 +40,7 @@ def bse_announcements_enhanced():
         }), 403
 
     # Check if BSE announcements are disabled
-    config = get_config()
-    if config.DISABLE_BSE_ANNOUNCEMENTS:
+    if os.environ.get('DISABLE_BSE_ANNOUNCEMENTS', 'false').lower() == 'true':
         return jsonify({
             "ok": False,
             "error": "BSE announcements disabled on this deployment",
@@ -143,7 +142,7 @@ def bse_announcements_enhanced():
                     if already_sent:
                         user_duplicates_prevented += 1
                         totals["duplicates_prevented"] += 1
-                        if config.BSE_VERBOSE:
+                        if os.environ.get('BSE_VERBOSE', '0') == '1':
                             logger.info(f"🚫 ENHANCED: Duplicate prevented for {news_id} - {reason}")
                         continue
 
@@ -158,7 +157,7 @@ def bse_announcements_enhanced():
                         user_notifications_sent += notifications_sent
                         totals["notifications_sent"] += notifications_sent
 
-                        if config.BSE_VERBOSE:
+                        if os.environ.get('BSE_VERBOSE', '0') == '1':
                             logger.info(f"📢 ENHANCED: Sent {news_id} to {uid[:8]} ({notifications_sent} notifications)")
                     else:
                         totals["database_errors"] += 1
