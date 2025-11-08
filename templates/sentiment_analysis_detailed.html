@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>📊 Detailed Sentiment Analysis</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @media (max-width: 640px) {
+            .news-card { margin: 8px 0; }
+            .tap-target { min-height: 44px; min-width: 44px; }
+        }
+        .sentiment-positive { border-left: 4px solid #10b981; background: linear-gradient(90deg, #ecfdf5, #ffffff); }
+        .sentiment-negative { border-left: 4px solid #ef4444; background: linear-gradient(90deg, #fef2f2, #ffffff); }
+        .sentiment-neutral { border-left: 4px solid #6b7280; background: linear-gradient(90deg, #f9fafb, #ffffff); }
+        .loading { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        .fade-in { animation: fadeIn 0.5s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4">
+        <!-- Header with Back Button -->
+        <div class="flex items-center gap-3 mb-6">
+            <button onclick="goBack()" class="bg-gray-500 text-white p-2 rounded-full hover:bg-gray-600 tap-target">
+                ← Back
+            </button>
+            <div>
+                <h1 class="text-xl font-bold text-gray-800">📊 Sentiment Analysis</h1>
+                <p id="stock-name" class="text-sm text-gray-600">Loading...</p>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loadingState" class="text-center py-12">
+            <div class="loading">
+                <div class="text-4xl mb-4">📊</div>
+                <div class="text-gray-600">Analyzing sentiment...</div>
+                <div class="text-sm text-gray-500 mt-2">Fetching real-time news and analyzing sentiment</div>
+            </div>
+        </div>
+
+        <!-- Error State -->
+        <div id="errorState" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4" style="display: none;">
+            <strong>Analysis Failed:</strong>
+            <span id="errorMessage">Unknown error</span>
+            
+            <!-- Debug Information -->
+            <div id="debugInfo" class="mt-3 text-sm" style="display: none;">
+                <details>
+                    <summary class="cursor-pointer font-semibold">🔍 Debug Information (Click to expand)</summary>
+                    <div id="debugContent" class="mt-2 bg-red-50 p-3 rounded border-l-4 border-red-300">
+                        <!-- Debug info will be populated here -->
+                    </div>
+                </details>
+            </div>
+        </div>
+
+        <!-- Results Container -->
+        <div id="resultsContainer" style="display: none;">
+            <!-- Overall Sentiment Summary -->
+            <div id="overallSentiment" class="bg-white p-6 rounded-lg shadow-lg mb-6 fade-in">
+                <!-- Will be populated by JavaScript -->
+            </div>
+
+            <!-- Data Sources Info -->
+            <div id="dataSourcesInfo" class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                <h3 class="font-bold text-blue-800 mb-2">📊 Analysis Sources</h3>
+                <div id="sourcesList" class="text-sm text-blue-700 mb-3">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+                
+                <!-- Deduplication Info -->
+                <div id="deduplicationInfo" class="text-sm text-blue-600" style="display: none;">
+                    <div class="border-t border-blue-200 pt-2 mt-2">
+                        <strong>🤖 AI Deduplication:</strong>
+                        <span id="deduplicationDetails">Processing...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Article Statistics -->
+            <div class="grid grid-cols-3 gap-4 mb-6">
+                <div class="bg-green-50 p-4 rounded-lg text-center">
+                    <div id="positiveCount" class="text-2xl font-bold text-green-600">0</div>
+                    <div class="text-sm text-green-700">Positive</div>
+                </div>
+                <div class="bg-red-50 p-4 rounded-lg text-center">
+                    <div id="negativeCount" class="text-2xl font-bold text-red-600">0</div>
+                    <div class="text-sm text-red-700">Negative</div>
+                </div>
+                <div class="bg-gray-50 p-4 rounded-lg text-center">
+                    <div id="neutralCount" class="text-2xl font-bold text-gray-600">0</div>
+                    <div class="text-sm text-gray-700">Neutral</div>
+                </div>
+            </div>
+
+            <!-- Individual Articles -->
+            <div>
+                <h2 class="text-xl font-bold mb-4">📰 Individual Articles Analysis</h2>
+                <div id="articlesContainer" class="space-y-4">
+                    <!-- Articles will be populated here -->
+                </div>
+            </div>
+
+            <!-- Analysis Details -->
+            <div class="mt-8 bg-gray-50 p-4 rounded-lg">
+                <h3 class="font-bold mb-2">ℹ️ Analysis Information</h3>
+                <div class="text-sm text-gray-600 space-y-1">
+                    <div>Analysis completed at: <span id="analysisTime">-</span></div>
+                    <div>Total articles analyzed: <span id="totalArticles">-</span></div>
+                    <div>Confidence level: <span id="confidenceLevel">-</span>%</div>
+                    <div>Analysis method: Comprehensive (API + Database)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Refresh Button -->
+        <div class="fixed bottom-6 right-6">
+            <button onclick="refreshAnalysis()" class="bg-blue-500 text-white p-4 rounded-full shadow-lg hover:bg-blue-600 tap-target">
+                🔄
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let currentStockSymbol = '';
+        let currentCompanyName = '';
+
+        // Get parameters from URL
+        function getUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                stock_symbol: params.get('symbol'),
+                company_name: params.get('name')
+            };
+        }
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            const params = getUrlParams();
+            if (params.stock_symbol && params.company_name) {
+                currentStockSymbol = params.stock_symbol;
+                currentCompanyName = params.company_name;
+                
+                document.getElementById('stock-name').textContent = `${params.company_name} (${params.stock_symbol})`;
+                performAnalysis();
+            } else {
+                showError('Missing stock information. Please go back and select a stock.');
+            }
+        });
+
+        async function performAnalysis() {
+            document.getElementById('loadingState').style.display = 'block';
+            document.getElementById('errorState').style.display = 'none';
+            document.getElementById('resultsContainer').style.display = 'none';
+
+            try {
+                const response = await fetch('/analyze_sentiment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        stock_symbol: currentStockSymbol,
+                        company_name: currentCompanyName
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayResults(data.sentiment_data);
+                } else {
+                    showError(data.error || 'Analysis failed', data);
+                }
+            } catch (error) {
+                showError('Network error: ' + error.message);
+            }
+
+            document.getElementById('loadingState').style.display = 'none';
+        }
+
+        function displayResults(sentimentData) {
+            // Overall sentiment
+            const overallContainer = document.getElementById('overallSentiment');
+            const emoji = sentimentData.overall_emoji || '📊';
+            const sentiment = sentimentData.overall_sentiment || 'NEUTRAL';
+            const score = sentimentData.sentiment_score || 0;
+            const confidence = sentimentData.confidence || 0;
+
+            overallContainer.innerHTML = `
+                <div class="text-center">
+                    <div class="text-6xl mb-4">${emoji}</div>
+                    <h2 class="text-2xl font-bold mb-2">${sentiment} SENTIMENT</h2>
+                    <div class="text-lg mb-4">Score: ${score} | Confidence: ${confidence}%</div>
+                    <div class="w-full bg-gray-200 rounded-full h-3">
+                        <div class="bg-blue-600 h-3 rounded-full transition-all duration-1000" style="width: ${confidence}%"></div>
+                    </div>
+                </div>
+            `;
+
+            // Show data sources
+            if (sentimentData.data_sources) {
+                const sourcesList = document.getElementById('sourcesList');
+                sourcesList.innerHTML = sentimentData.data_sources.map(source => 
+                    `<div>• ${source}</div>`
+                ).join('');
+            }
+            
+            // Show deduplication information
+            if (sentimentData.deduplication_stats || sentimentData.ai_deduplication_used) {
+                const dedupInfo = document.getElementById('deduplicationInfo');
+                const dedupDetails = document.getElementById('deduplicationDetails');
+                
+                let dedupText = '';
+                
+                if (sentimentData.deduplication_stats) {
+                    const stats = sentimentData.deduplication_stats;
+                    const method = stats.method || 'unknown';
+                    const removed = stats.duplicates_removed || 0;
+                    
+                    if (method === 'ai_gemini') {
+                        dedupText = `🤖 AI-powered semantic deduplication removed ${removed} duplicate articles`;
+                    } else if (method === 'simple_title_matching') {
+                        dedupText = `📋 Simple title-based deduplication removed ${removed} duplicate articles`;
+                    } else {
+                        dedupText = `Deduplication removed ${removed} duplicate articles`;
+                    }
+                    
+                    if (sentimentData.duplicate_clusters && sentimentData.duplicate_clusters.length > 0) {
+                        dedupText += ` (${sentimentData.duplicate_clusters.length} clusters found)`;
+                    }
+                } else if (sentimentData.ai_deduplication_available === false) {
+                    dedupText = 'AI deduplication not available (using simple title matching)';
+                } else {
+                    dedupText = 'Standard deduplication applied';
+                }
+                
+                dedupDetails.textContent = dedupText;
+                dedupInfo.style.display = 'block';
+            }
+
+            // Statistics
+            document.getElementById('positiveCount').textContent = sentimentData.positive_articles || 0;
+            document.getElementById('negativeCount').textContent = sentimentData.negative_articles || 0;
+            document.getElementById('neutralCount').textContent = sentimentData.neutral_articles || 0;
+
+            // Individual articles
+            if (sentimentData.articles && sentimentData.articles.length > 0) {
+                displayArticles(sentimentData.articles);
+            }
+
+            // Analysis details
+            document.getElementById('analysisTime').textContent = new Date(sentimentData.analysis_timestamp).toLocaleString();
+            document.getElementById('totalArticles').textContent = sentimentData.total_articles || 0;
+            document.getElementById('confidenceLevel').textContent = confidence;
+
+            document.getElementById('resultsContainer').style.display = 'block';
+        }
+
+        function displayArticles(articles) {
+            const container = document.getElementById('articlesContainer');
+            
+            container.innerHTML = articles.map((article, index) => {
+                const sentimentClass = getSentimentClass(article.sentiment_label);
+                const hasUrl = article.url && article.url !== '';
+                
+                // Check if article is clustered (merged duplicates)
+                const isClustered = article.is_clustered || article.duplicate_count > 0;
+                const duplicateCount = article.duplicate_count || 0;
+                const clusterIcon = isClustered ? '🔗' : '📰';
+                const clusterInfo = duplicateCount > 0 ? ` (+${duplicateCount} similar)` : '';
+                
+                return `
+                    <div class="bg-white rounded-lg shadow ${sentimentClass} news-card fade-in" style="animation-delay: ${index * 0.1}s">
+                        <div class="p-4">
+                            <div class="flex justify-between items-start mb-3">
+                                <div class="flex-1">
+                                    <h3 class="font-bold text-lg leading-tight mb-1">
+                                        ${clusterIcon} ${article.title || 'No title'}${clusterInfo}
+                                    </h3>
+                                    <p class="text-sm text-gray-600">${article.source || 'Unknown source'}</p>
+                                    ${isClustered ? `<p class="text-xs text-blue-600 mt-1">🤖 Merged from multiple sources</p>` : ''}
+                                </div>
+                                <div class="text-right ml-3">
+                                    <div class="text-2xl mb-1">${article.sentiment_emoji || '📊'}</div>
+                                    <div class="text-sm font-bold">${Math.abs(article.sentiment_score || 0)}</div>
+                                </div>
+                            </div>
+                            
+                            ${article.description ? `<p class="text-sm text-gray-700 mb-3">${article.description.substring(0, 150)}${article.description.length > 150 ? '...' : ''}</p>` : ''}
+                            
+                            <div class="flex flex-wrap gap-2 mb-3">
+                                <span class="px-2 py-1 bg-gray-100 text-xs rounded">${article.sentiment_label}</span>
+                                <span class="px-2 py-1 bg-blue-100 text-xs rounded">${article.confidence || 0}% confidence</span>
+                                ${isClustered ? `<span class="px-2 py-1 bg-green-100 text-xs rounded">🔗 Clustered</span>` : ''}
+                                ${article.positive_keywords_found && article.positive_keywords_found.length > 0 ? 
+                                    `<span class="px-2 py-1 bg-green-100 text-xs rounded">+${article.positive_keywords_found.length} pos</span>` : ''}
+                                ${article.negative_keywords_found && article.negative_keywords_found.length > 0 ? 
+                                    `<span class="px-2 py-1 bg-red-100 text-xs rounded">-${article.negative_keywords_found.length} neg</span>` : ''}
+                            </div>
+                            
+                            <!-- Multiple URLs for clustered articles -->
+                            ${article.merged_urls && article.merged_urls.length > 1 ? `
+                                <div class="space-y-2">
+                                    ${article.merged_urls.map((url, idx) => {
+                                        const sourceName = article.merged_sources && article.merged_sources[idx] ? article.merged_sources[idx] : `Source ${idx + 1}`;
+                                        return url ? `
+                                            <button onclick="openArticle('${url}')" class="w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 tap-target text-sm">
+                                                🔗 Read on ${sourceName}
+                                            </button>
+                                        ` : '';
+                                    }).join('')}
+                                </div>
+                            ` : hasUrl ? `
+                                <button onclick="openArticle('${article.url}')" class="w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 tap-target">
+                                    🔗 Read Full Article
+                                </button>
+                            ` : `
+                                <div class="text-xs text-gray-500 text-center py-2">No link available</div>
+                            `}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function getSentimentClass(sentiment) {
+            switch(sentiment) {
+                case 'POSITIVE': return 'sentiment-positive';
+                case 'NEGATIVE': return 'sentiment-negative';
+                default: return 'sentiment-neutral';
+            }
+        }
+
+        function openArticle(url) {
+            if (url && url !== '') {
+                window.open(url, '_blank', 'noopener,noreferrer');
+            }
+        }
+
+        function showError(message, errorData = null) {
+            document.getElementById('errorMessage').textContent = message;
+            document.getElementById('errorState').style.display = 'block';
+            
+            // Show debug information if available
+            if (errorData && (errorData.debug_info || errorData.search_queries_tried || errorData.data_sources)) {
+                const debugDiv = document.getElementById('debugInfo');
+                const debugContent = document.getElementById('debugContent');
+                
+                let debugHtml = '';
+                
+                if (errorData.search_queries_tried) {
+                    debugHtml += `<div class="mb-2"><strong>Search Queries Tried:</strong><br>${errorData.search_queries_tried.join(', ')}</div>`;
+                }
+                
+                if (errorData.data_sources) {
+                    debugHtml += `<div class="mb-2"><strong>Data Sources:</strong><br>${errorData.data_sources.join('<br>')}</div>`;
+                }
+                
+                if (errorData.debug_info) {
+                    debugHtml += `<div class="mb-2"><strong>Debug Log:</strong><br>${errorData.debug_info.join('<br>')}</div>`;
+                }
+                
+                if (debugHtml) {
+                    debugContent.innerHTML = debugHtml;
+                    debugDiv.style.display = 'block';
+                }
+            }
+        }
+
+        function refreshAnalysis() {
+            performAnalysis();
+        }
+
+        function goBack() {
+            // Try to go back in history, fallback to dashboard
+            if (window.history.length > 1) {
+                window.history.back();
+            } else {
+                window.location.href = '/sentiment_analysis_mobile';
+            }
+        }
+    </script>
+</body>
+</html>

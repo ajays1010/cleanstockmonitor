@@ -1,0 +1,110 @@
+services:
+  - type: web
+    name: bse-monitor
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: bash start_with_monitor.sh
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: FLASK_SECRET_KEY
+        sync: false
+      - key: FLASK_DEBUG
+        value: "0"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: CRON_SECRET_KEY
+        sync: false
+      # Firebase Admin SDK Configuration
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+      # Firebase Client Configuration (for frontend)
+      - key: FIREBASE_API_KEY
+        sync: false
+      - key: FIREBASE_AUTH_DOMAIN
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_STORAGE_BUCKET
+        sync: false
+      - key: FIREBASE_MESSAGING_SENDER_ID
+        sync: false
+      - key: FIREBASE_APP_ID
+        sync: false
+      # AI Configuration
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: "gemini-2.5-flash"
+      # NewsData.io Configuration (for sentiment analysis)
+      - key: NEWSDATA_API_KEY
+        sync: false
+      # Performance Tuning
+      - key: YAHOO_CACHE_TTL
+        value: "60"
+      - key: YAHOO_VERBOSE
+        value: "0"
+      - key: BSE_VERBOSE
+        value: "1"
+      # Enhanced deduplication settings
+      - key: ALERT_VERBOSE
+        value: "1"
+      # Disable BSE announcements on multiuser deployment (handled by external cron)
+      - key: DISABLE_BSE_ANNOUNCEMENTS
+        value: "true"
+    # Cron Jobs
+  
+  # 1. Price Spike Monitoring (Every 5 minutes during market hours)
+  - type: cron
+    name: price-spike-monitor
+    env: python
+    schedule: "*/5 3-10 * * 1-5"  # Every 5 minutes from 9:00 AM to 3:30 PM IST (3:30 AM to 10:00 AM UTC), Monday to Friday
+    buildCommand: pip install -r requirements.txt
+    startCommand: curl -f "https://multiuser-bse-monitor.onrender.com/cron/hourly_spike_alerts?key=$CRON_SECRET_KEY" || exit 1
+    envVars:
+      - key: CRON_SECRET_KEY
+        sync: false
+
+  # 2. End-of-Day Price Summary (Daily at 4:00 PM IST)
+  - type: cron
+    name: daily-price-summary
+    env: python
+    schedule: "0 10 * * 1-5"  # 4:00 PM IST = 10:30 AM UTC (Monday to Friday)
+    buildCommand: pip install -r requirements.txt
+    startCommand: curl -f "https://multiuser-bse-monitor.onrender.com/cron/daily_summary?key=$CRON_SECRET_KEY" || exit 1
+    envVars:
+      - key: CRON_SECRET_KEY
+        sync: false
+
+  # 3. BSE Announcements Monitoring - DISABLED
+  # Endpoint disabled on multiuser deployment via DISABLE_BSE_ANNOUNCEMENTS=true
+  # Now handled exclusively by external cron-job.org: https://stockmonitor-aknr.onrender.com/cron/bse_announcements?key=$CRON_SECRET_KEY
+  # This prevents duplicate notifications between multiuser-bse-monitor and stockmonitor-aknr deployments
+
+  # 3. Daily Bulk Deals Monitoring (Once daily at 9:00 AM IST)
+  - type: cron
+    name: daily-bulk-deals
+    env: python
+    schedule: "30 3 * * 1-5"  # 9:00 AM IST = 3:30 AM UTC (Monday to Friday)
+    buildCommand: pip install -r requirements.txt
+    startCommand: curl -f "https://multiuser-bse-monitor.onrender.com/cron/bulk_deals?key=$CRON_SECRET_KEY" || exit 1
+    envVars:
+      - key: CRON_SECRET_KEY
+        sync: false
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin - Cron Runs</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4 md:p-8">
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-800">Cron Run Summaries</h1>
+                <p class="text-sm text-gray-600">Evening summary time (IST): {{ evening_time or '16:00' }}</p>
+            </div>
+            <div>
+            
+                <a href="/admin/" class="text-blue-500 mr-4">Back to Admin Dashboard</a>
+                <a href="/logout" class="bg-gray-500 text-white py-2 px-4 rounded hover:bg-gray-600">Logout</a>
+            </div>
+        </div>
+
+        <form action="/admin/set_evening_time" method="post" class="bg-white p-4 rounded-lg shadow mb-6">
+            <label class="text-sm text-gray-700">Update evening summary time (IST HH:MM):</label>
+            <div class="flex items-center gap-2 mt-2">
+                <input type="text" name="evening_time" placeholder="16:00" class="border rounded p-2" />
+                <button class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded" type="submit">Save</button>
+            </div>
+            <p class="text-xs text-gray-500 mt-1">Note: Set your Render Cron to call /cron/evening_summary at the chosen time with your CRON_SECRET_KEY.</p>
+        </form>
+
+        <!-- Manual Cron Triggers -->
+        <div class="bg-white p-4 rounded-lg shadow mb-6">
+            <h3 class="text-lg font-semibold mb-3">🧪 Manual Cron Testing</h3>
+            <p class="text-sm text-gray-600 mb-4">Test cron jobs manually without waiting for scheduled time</p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <form action="/admin/trigger_cron" method="post" class="inline">
+                    <input type="hidden" name="cron_type" value="price_spike_alerts">
+                    <button type="submit" class="w-full bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded text-sm">
+                        🚨 Test Price Spike Monitor
+                    </button>
+                    <p class="text-xs text-gray-500 mt-1">Every 5min during market hours</p>
+                </form>
+                
+                <form action="/admin/trigger_cron" method="post" class="inline">
+                    <input type="hidden" name="cron_type" value="evening_summary">
+                    <button type="submit" class="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded text-sm">
+                        📊 Test Evening Summary
+                    </button>
+                    <p class="text-xs text-gray-500 mt-1">Daily at 16:30 IST</p>
+                </form>
+                
+                <form action="/admin/trigger_cron" method="post" class="inline">
+                    <input type="hidden" name="cron_type" value="bse_announcements">
+                    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm">
+                        📰 Test BSE Announcements
+                    </button>
+                    <p class="text-xs text-gray-500 mt-1">Every 5min, 24/7</p>
+                </form>
+            </div>
+            
+            <div class="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
+                <strong>Note:</strong> These buttons trigger the same endpoints that run automatically via cron. 
+                Use them to test functionality before the scheduled 16:30 IST run.
+            </div>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=True) %}
+        {% if messages %}
+        <div class="mb-4">
+            {% for category, msg in messages %}
+            <div class="p-3 rounded mb-2 {% if category == 'success' %}bg-green-100 text-green-800{% elif category == 'error' %}bg-red-100 text-red-800{% elif category == 'warning' %}bg-yellow-100 text-yellow-800{% else %}bg-blue-100 text-blue-800{% endif %}">
+                {{ msg }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
+
+        {% if not runs %}
+            <div class="bg-white p-6 rounded-lg shadow-lg">No cron runs found.</div>
+        {% else %}
+            <div class="space-y-6">
+                {% for run in runs %}
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <div class="flex justify-between items-center mb-2">
+                        <div>
+                            <h2 class="text-xl font-semibold">Run ID: <span class="text-gray-700">{{ run.run_id }}</span></h2>
+                            <p class="text-sm text-gray-600">{{ run.run_at }} — Job: {{ run.job }}</p>
+                        </div>
+                        <div class="text-sm text-gray-700">
+                            <span class="mr-4">Users: {{ run.processed_users }}/{{ run.total_users }} processed</span>
+                            <span class="mr-4">Skipped: {{ run.skipped_users }}</span>
+                            <span class="mr-4">Notifications Sent: {{ run.total_notifications }}</span>
+                            <span>Recipients: {{ run.total_recipients }}</span>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full text-sm">
+                            <thead>
+                                <tr class="bg-gray-100">
+                                    <th class="px-3 py-2 text-left">User ID</th>
+                                    <th class="px-3 py-2 text-left">Processed</th>
+                                    <th class="px-3 py-2 text-left">Notifications</th>
+                                    <th class="px-3 py-2 text-left">Recipients</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in run.items %}
+                                <tr class="border-b">
+                                    <td class="px-3 py-2">{{ item.user_id }}</td>
+                                    <td class="px-3 py-2">{{ 'Yes' if item.processed else 'No' }}</td>
+                                    <td class="px-3 py-2">{{ item.notifications_sent }}</td>
+                                    <td class="px-3 py-2">{{ item.recipients }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+    </div>
+</body>
+</html>

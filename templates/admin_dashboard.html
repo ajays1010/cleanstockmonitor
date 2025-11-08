@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4 md:p-8">
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">Admin Dashboard</h1>
+            <div>
+                <a href="/" class="text-blue-500 mr-4">Go to User Dashboard</a>
+                <a href="/admin/cron_runs" class="text-blue-500 mr-4">Cron Runs</a>
+                <a href="/logout" class="bg-gray-500 text-white py-2 px-4 rounded hover:bg-gray-600">Logout</a>
+            </div>
+        </div>
+        
+        <div class="bg-white p-6 rounded-lg shadow-lg mb-8">
+            <h2 class="text-xl font-semibold mb-4">Select a User to View</h2>
+            <form id="user-select-form" class="flex items-center gap-4">
+                <select id="user-selector" class="w-full p-2 border rounded">
+                    <option value="">-- Select a User --</option>
+                    {% for user in users %}
+                    <option value="{{ user.id }}" {% if selected_user and selected_user.id == user.id %}selected{% endif %}>
+                        {{ user.email }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <form action="{{ url_for('admin.purge_data') }}" method="post" class="flex items-center gap-2 ml-4">
+                    <input type="password" name="secret" placeholder="Enter purge secret" class="p-2 border rounded" required>
+                    <button type="submit" class="bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded" onclick="return confirm('This will delete all data except yours. Continue?')">Purge Others</button>
+                </form>
+            </form>
+        </div>
+
+        {% if selected_user %}
+        <h2 class="text-2xl font-bold mb-4">Managing User: <span class="text-blue-600">{{ selected_user.email }}</span></h2>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div class="bg-white p-6 rounded-lg shadow-lg">
+                <h3 class="text-lg font-semibold mb-4">Add Scrip for User</h3>
+                <form action="{{ url_for('admin.add_scrip') }}" method="post" class="flex items-center gap-4 mb-6">
+                    <input type="hidden" name="user_id" value="{{ selected_user.id }}">
+                    <input type="text" name="scrip_code" placeholder="BSE Code" class="shadow border rounded w-full py-2 px-3" required>
+                    <input type="text" name="company_name" placeholder="Company Name" class="shadow border rounded w-full py-2 px-3" required>
+                    <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Add</button>
+                </form>
+                <h3 class="text-lg font-semibold mb-4 border-t pt-4">Monitored Scrips</h3>
+                <div class="overflow-y-auto max-h-96">
+                    <table class="min-w-full bg-white">
+                        <tbody>
+                            {% for scrip in selected_user.scrips %}
+                            <tr class="border-b">
+                                <td class="py-2 px-4"><b>{{ scrip.bse_code }}</b><br><span class="text-sm text-gray-600">{{ scrip.company_name }}</span></td>
+                                <td class="py-2 px-4 text-right">
+                                    <form action="{{ url_for('admin.delete_scrip') }}" method="post" class="inline-block">
+                                        <input type="hidden" name="user_id" value="{{ selected_user.id }}">
+                                        <input type="hidden" name="scrip_code" value="{{ scrip.bse_code }}">
+                                        <button type="submit" class="bg-red-500 hover:bg-red-700 text-white text-xs font-bold py-1 px-2 rounded">Delete</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-lg">
+                <h3 class="text-lg font-semibold mb-4">Add Telegram Recipient for User</h3>
+                <form action="{{ url_for('admin.add_recipient') }}" method="post" class="space-y-4 mb-6">
+                    <input type="hidden" name="user_id" value="{{ selected_user.id }}">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <input type="text" name="chat_id" placeholder="Telegram Chat ID" class="shadow border rounded py-2 px-3" required>
+                        <input type="text" name="user_name" placeholder="Recipient Name (e.g., John, Trading Team)" class="shadow border rounded py-2 px-3" required>
+                    </div>
+                    <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Add Recipient</button>
+                    <p class="text-sm text-gray-600">Multiple users can share the same chat ID with different names</p>
+                </form>
+                <h3 class="text-lg font-semibold mb-4 border-t pt-4">Telegram Recipients</h3>
+                <div class="overflow-y-auto max-h-96">
+                    <table class="min-w-full bg-white">
+                        <thead>
+                            <tr class="border-b">
+                                <th class="py-2 px-4 text-left">Recipient Name</th>
+                                <th class="py-2 px-4 text-left">Chat ID</th>
+                                <th class="py-2 px-4 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for recipient in selected_user.recipients %}
+                            <tr class="border-b">
+                                <td class="py-2 px-4 font-medium">👤 {{ recipient.user_name or 'Unknown' }}</td>
+                                <td class="py-2 px-4 text-gray-600">{{ recipient.chat_id }}</td>
+                                <td class="py-2 px-4 text-right">
+                                    <form action="{{ url_for('admin.delete_recipient') }}" method="post" class="inline-block">
+                                        <input type="hidden" name="user_id" value="{{ selected_user.id }}">
+                                        <input type="hidden" name="chat_id" value="{{ recipient.chat_id }}">
+                                        <input type="hidden" name="user_name" value="{{ recipient.user_name }}">
+                                        <button type="submit" class="bg-red-500 hover:bg-red-700 text-white text-xs font-bold py-1 px-2 rounded">Delete</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    <script>
+        document.getElementById('user-selector').addEventListener('change', function() {
+            const userId = this.value;
+            if (userId) {
+                window.location.href = '/admin/user/' + userId;
+            } else {
+                window.location.href = '/admin';
+            }
+        });
+    </script>
+</body>
+</html>
