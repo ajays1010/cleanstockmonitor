@@ -156,13 +156,13 @@ class EnhancedBSEDeduplication:
     def get_deduplication_stats(self, sb) -> Dict:
         """Get statistics from existing seen_announcements table"""
         try:
-            # Get total records
-            total_response = sb.table('seen_announcements').select('id', count='exact').execute()
+            # Get total records - don't assume 'id' column exists
+            total_response = sb.table('seen_announcements').select('*', count='exact').execute()
             total_count = getattr(total_response, 'count', 0) or 0
 
             # Get records from last 24 hours
             yesterday = (datetime.now() - timedelta(hours=24)).isoformat()
-            recent_response = sb.table('seen_announcements').select('id', count='exact').gte('created_at', yesterday).execute()
+            recent_response = sb.table('seen_announcements').select('*', count='exact').gte('created_at', yesterday).execute()
             recent_count = getattr(recent_response, 'count', 0) or 0
 
             # Get unique users today

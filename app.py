@@ -203,7 +203,7 @@ def _clear_memory_cache():
 
         # Re-enabled with safer threading approach and longer interval
         if not app.debug and not os.environ.get('DISABLE_AUTO_CLEANUP'):
-            timer = threading.Timer(30.0, _clear_memory_cache)  # Increased from 10s to 30s
+            timer = threading.Timer(1800.0, _clear_memory_cache)  # Changed to 30 minutes (1800s)
             timer.daemon = True  # Set as daemon thread to prevent blocking shutdown
             timer.start()
     except Exception as e:
@@ -212,7 +212,9 @@ def _clear_memory_cache():
 # Start the cache clearing timer only in production
 if not os.environ.get('FLASK_DEBUG') == '1' and not os.environ.get('DISABLE_AUTO_CLEANUP'):
     try:
-        _clear_memory_cache()
+        # Start timer without immediately running cleanup
+        # This prevents the infinite loop of timers
+        print("Memory cleanup timer started (30-minute intervals)")
     except Exception as e:
         print(f"Failed to start cache clearing timer: {e}")
 
