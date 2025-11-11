@@ -44,7 +44,7 @@ class BulkBlockDealsMonitor:
         Returns list of deal dictionaries
         """
         if os.environ.get('BSE_VERBOSE', '0') == '1':
-            print("🔍 Fetching NSE Bulk/Block Deals...")
+            print("Fetching NSE Bulk/Block Deals...")
         
         try:
             # NSE requires session establishment
@@ -93,13 +93,13 @@ class BulkBlockDealsMonitor:
                     deal['deal_value'] = deal['quantity'] * deal['price']
             
             if os.environ.get('BSE_VERBOSE', '0') == '1':
-                print(f"✅ NSE: Found {len(deals)} deals")
+                print(f"NSE: Found {len(deals)} deals")
             
             return deals
             
         except Exception as e:
             if os.environ.get('BSE_VERBOSE', '0') == '1':
-                print(f"❌ NSE Error: {e}")
+                print(f"NSE Error: {e}")
             return []
     
     def fetch_bse_deals(self, deal_type: str = 'bulk') -> List[Dict]:
@@ -108,7 +108,7 @@ class BulkBlockDealsMonitor:
         deal_type: 'bulk' or 'block'
         """
         if os.environ.get('BSE_VERBOSE', '0') == '1':
-            print(f"🔍 Fetching BSE {deal_type.title()} Deals...")
+            print(f"Fetching BSE {deal_type.title()} Deals...")
         
         try:
             if deal_type.lower() == 'block':
@@ -175,17 +175,17 @@ class BulkBlockDealsMonitor:
                                 continue
                 
                 if os.environ.get('BSE_VERBOSE', '0') == '1':
-                    print(f"✅ BSE {deal_type.title()}: Found {len(deals)} deals")
+                    print(f"BSE {deal_type.title()}: Found {len(deals)} deals")
                 
                 return deals
             else:
                 if os.environ.get('BSE_VERBOSE', '0') == '1':
-                    print(f"❌ BSE {deal_type.title()}: HTTP {response.status_code}")
+                    print(f"BSE {deal_type.title()}: HTTP {response.status_code}")
                 return []
                 
         except Exception as e:
             if os.environ.get('BSE_VERBOSE', '0') == '1':
-                print(f"❌ BSE {deal_type.title()} Error: {e}")
+                print(f"BSE {deal_type.title()} Error: {e}")
             return []
     
     def parse_number(self, text: str) -> float:
@@ -273,8 +273,8 @@ class BulkBlockDealsMonitor:
             lines.append(f"📦 Quantity: {deal['quantity']:,.0f}")
             
             if deal['price'] > 0:
-                lines.append(f"💰 Price: ₹{deal['price']:.2f}")
-                lines.append(f"💸 Value: ₹{deal['deal_value']:,.0f}")
+                lines.append(f"💰 Price: Rs.{deal['price']:.2f}")
+                lines.append(f"💸 Value: Rs.{deal['deal_value']:,.0f}")
             
             lines.append("")
         
