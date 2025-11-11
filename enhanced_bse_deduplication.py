@@ -53,6 +53,9 @@ class EnhancedBSEDeduplication:
         Returns:
             (already_sent, reason)
         """
+        # Convert datetime to string for consistent comparison
+        ann_dt_str = ann_dt.strftime('%Y-%m-%d %H:%M:%S') if hasattr(ann_dt, 'strftime') else str(ann_dt)
+
         try:
             if self._verbose:
                 logger.info(f"🔍 ENHANCED BSE: Checking {news_id} for user {user_id[:8]}")
@@ -87,7 +90,7 @@ class EnhancedBSEDeduplication:
 
                     # Compare key fields
                     if (existing_headline.lower() == headline.lower() and
-                        existing_ann_dt == ann_dt and
+                        existing_ann_dt == ann_dt_str and
                         existing_category.lower() == category.lower()):
                         if self._verbose:
                             logger.info(f"🚫 ENHANCED BSE: Content match found for {news_id}")

@@ -327,8 +327,10 @@ def bse_announcements_enhanced():
                             logger.info(f"📢 ENHANCED: Sent {news_id} to {uid[:8]} ({notifications_sent} notifications)")
 
                         # Mark as sent in existing table AFTER all notifications are successfully sent
+                        # Convert datetime object to ISO string for database storage
+                        ann_dt_str = ann_dt.strftime('%Y-%m-%d %H:%M:%S') if hasattr(ann_dt, 'strftime') else str(ann_dt)
                         marked = dedup.mark_announcement_sent(
-                            sb_service, uid, news_id, headline, company_name, ann_dt, category, scrip_code, pdf_name
+                            sb_service, uid, news_id, headline, company_name, ann_dt_str, category, scrip_code, pdf_name
                         )
 
                         if not marked:
