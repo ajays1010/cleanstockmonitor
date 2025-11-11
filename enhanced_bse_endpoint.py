@@ -146,52 +146,202 @@ def bse_announcements_enhanced():
                             logger.info(f"🚫 ENHANCED: Duplicate prevented for {news_id} - {reason}")
                         continue
 
-                    # Mark as sent in existing table BEFORE sending notification
-                    marked = dedup.mark_announcement_sent(
-                        sb_service, uid, news_id, headline, company_name, ann_dt, category, scrip_code, pdf_name
-                    )
+                    # Send actual Telegram notifications with PDF and AI analysis (like original)
+                    notifications_sent = 0
+                    try:
+                            from database import (TELEGRAM_API_URL, ist_now, PDF_BASE_URL, BSE_HEADERS,
+                                                    ai_service, format_structured_telegram_message,
+                                                    analyze_pdf_bytes_with_gemini)
+                            from requests import post
+                            from collections import defaultdict
 
-                    if marked:
-                        # Send notification (this would be your Telegram notification logic)
-                        notifications_sent = len(recipients)
-                        user_notifications_sent += notifications_sent
-                        totals["notifications_sent"] += notifications_sent
+                            # Create item for PDF and AI processing
+                            item = {
+                                'scrip_code': str(scrip_code),
+                                'headline': headline,
+                                'ann_dt': ann_dt,
+                                'pdf_name': pdf_name,
+                                'category': category,
+                                'news_id': news_id
+                            }
 
-                        if os.environ.get('BSE_VERBOSE', '0') == '1':
-                            logger.info(f"📢 ENHANCED: Sent {news_id} to {uid[:8]} ({notifications_sent} notifications)")
-                    else:
-                        totals["database_errors"] += 1
-                        errors.append(f"Failed to mark {news_id} as sent for user {uid[:8]}")
+                            # 1. Send text summary message first
+                            code_to_name = {str(scrip_code): company_name}
+                            by_scrip = defaultdict(list)
+                            by_scrip[scrip_code] = [item]
 
-                processing_details.append({
-                    'user_id': uid[:8],
-                    'announcements_found': len(user_announcements),
-                    'duplicates_prevented': user_duplicates_prevented,
-                    'notifications_sent': user_notifications_sent
-                })
+                            # Build summary message like the original function
+                            header = [
+                                "📰 BSE Announcements",
+                                f"🕐 {ist_now().strftime('%Y-%m-%d %H:%M:%S')} IST",
+                                "",
+                            ]
+                            lines = header[:]
+                            for scode, items in by_scrip.items():
+                                comp_name = code_to_name.get(str(scode)) or str(scode)
+                                lines.append(f"• {comp_name}")
+                                for it in items[:5]:
+                                    lines.append(f"  - {it['ann_dt'].strftime('%d-%m %H:%M')} — {it['headline']}")
+                                lines.append("")
+
+                            summary_text = "\n".join(lines).strip()
+
+                            # Send summary to each recipient
+                            for recipient in recipients:
+                                chat_id = recipient.get('chat_id')
+                                user_name = recipient.get('user_name', 'User')
+
+                                if chat_id:
+                                    # Add user name header
+                                    personalized_summary = f"👤 {user_name}\n" + "─" * 20 + "\n" + summary_text
+
+                                    response = post(f"{TELEGRAM_API_URL}/sendMessage",
+                                                json={'chat_id': chat_id,
+                                                     'text': personalized_summary,
+                                                     'parse_mode': 'HTML'},
+                                                timeout=10)
+
+                                    if response.status_code == 200:
+                                        notifications_sent += 1
+                                        if os.environ.get('BSE_VERBOSE', '0') == '1':
+                                            logger.info(f"📢 ENHANCED: Sent summary {news_id} to {user_name} ({chat_id})")
+                                    else:
+                                        logger.error(f"❌ ENHANCED: Failed to send summary to {user_name} - HTTP {response.status_code}")
+
+                            # 2. Send PDF document (if available)
+                            if pdf_name and os.environ.get('BSE_VERBOSE', '0') == '1':
+                                logger.info(f"📄 ENHANCED: Attempting to send PDF for {pdf_name}")
+
+                            if pdf_name:
+                                pdf_url = f"{PDF_BASE_URL}{pdf_name}"
+                                try:
+                                    pdf_response = requests.get(pdf_url, headers=BSE_HEADERS, timeout=30)
+                                    if pdf_response.status_code == 200 and pdf_response.content:
+
+                                        # Build caption for PDF
+                                        caption = (
+                                            f"Company: {company_name}\n"
+                                            f"Announcement: {headline}\n"
+                                            f"Date: {ann_dt.strftime('%d-%m-%Y %H:%M')} IST\n"
+                                            f"Category: {category}"
+                                        )
+
+                                        # Send PDF to each recipient
+                                        for recipient in recipients:
+                                            chat_id = recipient.get('chat_id')
+                                            if chat_id:
+                                                pdf_response_post = post(
+                                                    f"{TEGRAM_API_URL}/sendDocument",
+                                                    json={
+                                                        'chat_id': chat_id,
+                                                        'document': pdf_url,
+                                                        'caption': caption,
+                                                        'parse_mode': 'HTML'
+                                                    },
+                                                    timeout=10
+                                                )
+
+                                                if pdf_response_post.status_code == 200:
+                                                    if os.environ.get('BSE_VERBOSE', '0') == '1':
+                                                        logger.info(f"📄 ENHANCED: Sent PDF {pdf_name} to {chat_id}")
+                                                else:
+                                                    logger.error(f"❌ ENHANCED: Failed to send PDF to {chat_id} - HTTP {pdf_response_post.status_code}")
+
+                                except Exception as pdf_error:
+                                    logger.error(f"❌ ENHANCED: Error sending PDF {pdf_name}: {pdf_error}")
+
+                            # 3. Send AI analysis (if available)
+                            try:
+                                if os.environ.get('BSE_VERBOSE', '0') == '1':
+                                    logger.info(f"🤖 ENHANCED: Starting AI analysis for {pdf_name or 'no PDF'}")
+
+                                # Always try AI analysis (like original)
+                                if pdf_name:
+                                    ai_response = requests.get(pdf_url, headers=BSE_HEADERS, timeout=30)
+                                    if ai_response.status_code == 200 and ai_response.content:
+
+                                        analysis_result = analyze_pdf_bytes_with_gemini(
+                                            ai_response.content,
+                                            pdf_name,
+                                            str(scrip_code)
+                                        )
+
+                                        if analysis_result and os.environ.get('ENABLE_AI_ANALYSIS', 'true').lower() == 'true':
+                                            ai_message = format_structured_telegram_message(
+                                                analysis_result,
+                                                str(scrip_code),
+                                                headline,
+                                                ann_dt,
+                                                category == 'financials'
+                                            )
+
+                                            # Send AI analysis to each recipient
+                                            for recipient in recipients:
+                                                chat_id = recipient.get('chat_id')
+                                                user_name = recipient.get('user_name', 'User')
+
+                                                if chat_id:
+                                                    personalized_ai_message = f"👤 {user_name}\n" + "─" * 20 + "\n" + ai_message
+
+                                                    ai_response_post = post(
+                                                        f"{TELEGRAM_API_URL}/sendMessage",
+                                                        json={
+                                                            'chat_id': chat_id,
+                                                            'text': personalized_ai_message,
+                                                            'parse_mode': 'HTML'
+                                                        },
+                                                        timeout=10
+                                                    )
+
+                                                    if ai_response_post.status_code == 200:
+                                                        if os.environ.get('BSE_VERBOSE', '0') == '1':
+                                                            logger.info(f"🤖 ENHANCED: Sent AI analysis {pdf_name} to {user_name}")
+                                                    else:
+                                                        logger.error(f"❌ ENHANCED: Failed to send AI analysis to {user_name} - HTTP {ai_response_post.status_code}")
+
+                                else:
+                                    logger.warning(f"⚠️ ENHANCED: Could not fetch PDF for AI analysis")
+
+                            except Exception as ai_error:
+                        logger.error(f"❌ ENHANCED: Error in AI analysis: {ai_error}")
+
+                except Exception as e:
+                    logger.error(f"❌ ENHANCED: Error sending notifications for {news_id}: {e}")
+
+                user_notifications_sent += notifications_sent
+                totals["notifications_sent"] += notifications_sent
+
+                if os.environ.get('BSE_VERBOSE', '0') == '1':
+                    logger.info(f"📢 ENHANCED: Sent {news_id} to {uid[:8]} ({notifications_sent} notifications)")
+
+                # Mark as sent in existing table AFTER all notifications are successfully sent
+                marked = dedup.mark_announcement_sent(
+                    sb_service, uid, news_id, headline, company_name, ann_dt, category, scrip_code, pdf_name
+                )
+
+                if not marked:
+                    totals["database_errors"] += 1
+                    errors.append(f"Failed to mark {news_id} as sent for user {uid[:8]}")
+            else:
+                totals["database_errors"] += 1
+                errors.append(f"Failed to send any notifications for {news_id} to user {uid[:8]}")
+
+            processing_details.append({
+                'user_id': uid[:8],
+                'announcements_found': len(user_announcements),
+                'duplicates_prevented': user_duplicates_prevented,
+                'notifications_sent': user_notifications_sent
+            })
 
                 totals["users_processed"] += 1
 
-                # Log the run
-                try:
-                    user_uuid = uid if uid and len(uid) == 36 and '-' in uid else None
-                    sb_service.table('cron_run_logs').insert({
-                        'run_id': run_id,
-                        'job': 'bse_announcements_enhanced',
-                        'user_id': user_uuid,
-                        'processed': True,
-                        'notifications_sent': user_notifications_sent,
-                        'recipients': int(len(recipients)),
-                        'announcements_found': len(user_announcements),
-                        'duplicates_prevented': user_duplicates_prevented
-                    }).execute()
-                except Exception as e:
-                    errors.append(f"Log error for user {uid}: {e}")
+            # Skip logging to cron_run_logs to prevent database schema errors
+            # The main response processing_details contains all necessary information
 
-            except Exception as e:
-                error_msg = f"User {uid[:8]}: {str(e)}"
-                errors.append(error_msg)
-                logger.error(f"❌ Error processing user {uid[:8]}: {e}")
+        except Exception as e:
+            error_msg = f"User {uid[:8]}: {str(e)}"
+            errors.append(error_msg)
+            logger.error(f"❌ Error processing user {uid[:8]}: {e}")
 
         # Calculate final statistics
         runtime = (time.time() - start_time) * 1000

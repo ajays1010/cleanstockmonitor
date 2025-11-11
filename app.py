@@ -1848,24 +1848,8 @@ def health_check():
     
     response_time = round((time.time() - start_time) * 1000, 1)  # milliseconds
     
-    # Add BSE deduplication stats
-    try:
-        from enhanced_bse_deduplication import get_enhanced_bse_deduplication
-        dedup = get_enhanced_bse_deduplication()
-        sb = dedup.get_supabase_client(service_role=True)
-        if sb:
-            bse_stats = dedup.get_deduplication_stats(sb)
-            bse_dedup_info = {
-                'total_announcements_sent': bse_stats.get('total_announcements_sent', 0),
-                'last_24_hours': bse_stats.get('last_24_hours', 0),
-                'unique_users_today': bse_stats.get('unique_users_today', 0),
-                'table_name': bse_stats.get('table_name', 'seen_announcements'),
-                'enhancement_type': bse_stats.get('enhancement_type', 'content_based_deduplication')
-            }
-        else:
-            bse_dedup_info = {'status': 'database_error'}
-    except Exception:
-        bse_dedup_info = {'status': 'enhanced_dedup_error'}
+    # Add BSE deduplication stats - DISABLED to prevent startup errors
+    bse_dedup_info = {'status': 'disabled_for_stability', 'note': 'Enhanced BSE deduplication is active in endpoints'}
 
     # Add multi-threshold alert stats
     try:

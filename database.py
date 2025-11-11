@@ -1213,6 +1213,17 @@ def classify_bse_headline(headline: str):
     if "board meeting" in h or "meeting of the board of directors" in h:
         return 'Board Meeting'
 
+    # Company Update / Regulatory announcements (Regulation 30, etc.)
+    if (
+        "regulation 30" in h or "regulation 31" in h or "regulation 33" in h or "regulation 34" in h
+        or "regulation 39" in h or "regulation 46" in h or "regulation 47" in h
+        or "lodr" in h or "newspaper publication" in h or "newspaper advertisement" in h
+        or "shareholding pattern" in h or "share purchase" in h or "share acquisition" in h
+        or "financial results" in h or "audited" in h or "unaudited" in h
+        or "company update" in h or "corporate action" in h or "compliance" in h
+    ):
+        return 'Company Update'
+
     # Happening (events like LOI, order, award)
     if (
         "letter of intent" in h or " loi " in h or h.startswith("loi ") or "(loi)" in h
