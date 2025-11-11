@@ -15,7 +15,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 try:
     from enhanced_bse_deduplication import EnhancedBSEDeduplication
-    from database import get_supabase_client, fetch_bse_announcements_for_user, ist_now
+    from database import get_supabase_client, fetch_bse_announcements_for_scrip, ist_now
 except ImportError as e:
     logging.error(f"Failed to import required modules: {e}")
     sys.exit(1)
@@ -60,15 +60,15 @@ def bse_announcements_enhanced():
                 'error': 'Database connection failed'
             }), 500
 
-        # Get all users who have BSE monitoring enabled
-        users_response = sb_service.table('users').select('*').eq('bse_monitoring', True).execute()
+        # Get unique users from monitored_scrips table (no users table exists)
+        scrips_response = sb_service.table('monitored_scrips').select('user_id', count='exact').execute()
 
-        if not users_response.data:
-            logger.info("📊 ENHANCED: No users found with BSE monitoring enabled")
+        if not scrips_response.data:
+            logger.info("📊 ENHANCED: No users found with monitored scrips")
             return jsonify({
                 'ok': True,
                 'run_id': run_id,
-                'message': 'No users with BSE monitoring enabled',
+                'message': 'No users with monitored scrips',
                 'stats': {
                     'users_processed': 0,
                     'total_announcements_found': 0,
@@ -81,6 +81,9 @@ def bse_announcements_enhanced():
                 'timestamp': datetime.now().isoformat(),
                 'table_used': 'seen_announcements (existing, enhanced)'
             })
+
+        # Get unique user IDs
+        unique_user_ids = list(set([item['user_id'] for item in scrips_response.data]))
 
         # Process each user
         totals = {
@@ -97,8 +100,7 @@ def bse_announcements_enhanced():
         # Check for force_script parameter
         force_script = request.args.get('force_script')
 
-        for user_data in users_response.data:
-            uid = user_data['id']
+        for uid in unique_user_ids:
 
             try:
                 if os.environ.get('BSE_VERBOSE', '0') == '1':
@@ -112,25 +114,39 @@ def bse_announcements_enhanced():
                         logger.info(f"📝 ENHANCED: No monitored scripts for user {uid[:8]}")
                     continue
 
-                # Get user's BSE announcements (with rate limiting protection)
-                user_announcements = fetch_bse_announcements_for_user(uid, scrips_response.data, hours_back=24)
+                # Get user's BSE announcements by fetching for each script
+                since_dt = ist_now() - timedelta(hours=24)
+                user_announcements = []
+
+                for scrip_record in scrips_response.data:
+                    scrip_code = scrip_record.get('bse_code')
+                    company_name = scrip_record.get('company_name', f"Script {scrip_code}")
+
+                    if force_script and scrip_code != force_script:
+                        continue
+
+                    try:
+                        scrip_announcements = fetch_bse_announcements_for_scrip(scrip_code, since_dt)
+                        for announcement in scrip_announcements:
+                            announcement['scrip_code'] = scrip_code
+                            announcement['company_name'] = company_name
+                            announcement['user_id'] = uid
+                        user_announcements.extend(scrip_announcements)
+                    except Exception as scrip_error:
+                        logger.warning(f"⚠️ ENHANCED: Error fetching announcements for scrip {scrip_code}: {scrip_error}")
 
                 if not user_announcements:
                     if os.environ.get('BSE_VERBOSE', '0') == '1':
                         logger.info(f"📭 ENHANCED: No announcements found for user {uid[:8]}")
                     continue
 
-                # Filter by force_script if specified
-                if force_script:
-                    user_announcements = [ann for ann in user_announcements if ann.get('scrip_code') == force_script]
-
                 totals["total_announcements_found"] += len(user_announcements)
 
                 user_notifications_sent = 0
                 user_duplicates_prevented = 0
 
-                # Get user's telegram recipients for BSE
-                recipients_response = sb_service.table('telegram_recipients').select('*').eq('user_id', uid).eq('notification_types', 'bse').execute()
+                # Get user's telegram recipients for BSE (no notification_types column exists)
+                recipients_response = sb_service.table('telegram_recipients').select('*').eq('user_id', uid).execute()
 
                 if not recipients_response.data:
                     if os.environ.get('BSE_VERBOSE', '0') == '1':
@@ -165,47 +181,25 @@ def bse_announcements_enhanced():
                                 logger.info(f"🚫 ENHANCED: Duplicate prevented for {news_id} - {reason}")
                             continue
 
-                        # Send actual Telegram notifications with PDF and AI analysis (like original)
+                        # Send actual Telegram notifications with PDF and AI analysis
                         notifications_sent = 0
                         try:
-                            from database import (TELEGRAM_API_URL, ist_now, PDF_BASE_URL, BSE_HEADERS,
-                                                ai_service, format_structured_telegram_message,
-                                                analyze_pdf_bytes_with_gemini)
+                            from database import (TELEGRAM_API_URL, PDF_BASE_URL, BSE_HEADERS)
+                            from ai_service import analyze_pdf_bytes_with_gemini, format_structured_telegram_message
                             from requests import post
-                            from collections import defaultdict
+                            import requests
 
-                            # Create item for PDF and AI processing
-                            item = {
-                                'scrip_code': str(scrip_code),
-                                'headline': headline,
-                                'ann_dt': ann_dt,
-                                'pdf_name': pdf_name,
-                                'category': category,
-                                'news_id': news_id
-                            }
+                            # 1. Send text message
+                            text_message = (
+                                f"📰 BSE Announcement\n"
+                                f"🏢 {company_name} ({scrip_code})\n"
+                                f"📅 {ann_dt.strftime('%d-%m-%Y %H:%M')} IST\n"
+                                f"📋 {headline}\n"
+                                f"📁 Category: {category}"
+                            )
 
-                            # 1. Send text summary message first
-                            code_to_name = {str(scrip_code): company_name}
-                            by_scrip = defaultdict(list)
-                            by_scrip[scrip_code] = [item]
-
-                            # Build summary message like the original function
-                            header = [
-                                "📰 BSE Announcements",
-                                f"🕐 {ist_now().strftime('%Y-%m-%d %H:%M:%S')} IST",
-                                "",
-                            ]
-                            lines = header[:]
-                            for scode, items in by_scrip.items():
-                                comp_name = code_to_name.get(str(scode)) or str(scode)
-                                lines.append(f"• {comp_name}")
-                                for it in items[:5]:
-                                    lines.append(f"  {it['headline'][:80]}...")
-                                    lines.append(f"  📅 {it['ann_dt'].strftime('%d-%m-%Y %H:%M')}")
-                                    if it.get('pdf_name'):
-                                        lines.append(f"  📄 PDF: {it['pdf_name']}")
-
-                            summary_text = "\n".join(lines)
+                            if pdf_name:
+                                text_message += f"\n📄 PDF Available: {pdf_name}"
 
                             # Send to each recipient
                             for recipient in recipients:
@@ -213,33 +207,31 @@ def bse_announcements_enhanced():
                                 user_name = recipient.get('user_name', 'User')
 
                                 if chat_id:
-                                    # Add user name header
-                                    personalized_summary = f"👤 {user_name}\n" + "─" * 20 + "\n" + summary_text
+                                    personalized_message = f"👤 {user_name}\n" + "─" * 20 + "\n" + text_message
 
                                     response = post(f"{TELEGRAM_API_URL}/sendMessage",
                                                 json={'chat_id': chat_id,
-                                                     'text': personalized_summary,
+                                                     'text': personalized_message,
                                                      'parse_mode': 'HTML'},
                                                 timeout=10)
 
                                     if response.status_code == 200:
                                         notifications_sent += 1
                                         if os.environ.get('BSE_VERBOSE', '0') == '1':
-                                            logger.info(f"📢 ENHANCED: Sent summary {news_id} to {user_name} ({chat_id})")
+                                            logger.info(f"📢 ENHANCED: Sent text {news_id} to {user_name} ({chat_id})")
                                     else:
-                                        logger.error(f"❌ ENHANCED: Failed to send summary to {user_name} - HTTP {response.status_code}")
+                                        logger.error(f"❌ ENHANCED: Failed to send text to {user_name} - HTTP {response.status_code}")
 
                             # 2. Send PDF document (if available)
-                            if pdf_name and os.environ.get('BSE_VERBOSE', '0') == '1':
-                                logger.info(f"📄 ENHANCED: Attempting to send PDF for {pdf_name}")
-
                             if pdf_name:
+                                if os.environ.get('BSE_VERBOSE', '0') == '1':
+                                    logger.info(f"📄 ENHANCED: Attempting to send PDF for {pdf_name}")
+
                                 pdf_url = f"{PDF_BASE_URL}{pdf_name}"
                                 try:
                                     pdf_response = requests.get(pdf_url, headers=BSE_HEADERS, timeout=30)
                                     if pdf_response.status_code == 200 and pdf_response.content:
 
-                                        # Build caption for PDF
                                         caption = (
                                             f"Company: {company_name}\n"
                                             f"Announcement: {headline}\n"
@@ -271,18 +263,18 @@ def bse_announcements_enhanced():
                                 except Exception as pdf_error:
                                     logger.error(f"❌ ENHANCED: Error sending PDF {pdf_name}: {pdf_error}")
 
-                            # 3. Send AI analysis (if available)
-                            try:
-                                if os.environ.get('BSE_VERBOSE', '0') == '1':
-                                    logger.info(f"🤖 ENHANCED: Starting AI analysis for {pdf_name or 'no PDF'}")
+                            # 3. Send AI analysis (if PDF available)
+                            if pdf_name and os.environ.get('ENABLE_AI_ANALYSIS', 'false').lower() == 'true':
+                                try:
+                                    if os.environ.get('BSE_VERBOSE', '0') == '1':
+                                        logger.info(f"🤖 ENHANCED: Starting AI analysis for {pdf_name}")
 
-                                # Always try AI analysis (like original)
-                                if pdf_name:
-                                    ai_response = requests.get(pdf_url, headers=BSE_HEADERS, timeout=30)
-                                    if ai_response.status_code == 200 and ai_response.content:
+                                    # Get PDF for AI analysis
+                                    pdf_response = requests.get(pdf_url, headers=BSE_HEADERS, timeout=30)
+                                    if pdf_response.status_code == 200 and pdf_response.content:
 
                                         analysis_result = analyze_pdf_bytes_with_gemini(
-                                            ai_response.content,
+                                            pdf_response.content,
                                             announcement
                                         )
 
@@ -315,13 +307,9 @@ def bse_announcements_enhanced():
                                                             logger.info(f"🤖 ENHANCED: Sent AI analysis {pdf_name} to {user_name}")
                                                     else:
                                                         logger.error(f"❌ ENHANCED: Failed to send AI analysis to {user_name} - HTTP {ai_response_post.status_code}")
-                                        else:
-                                            logger.warning(f"⚠️ ENHANCED: AI analysis returned empty result for {pdf_name}")
-                                    else:
-                                        logger.warning(f"⚠️ ENHANCED: Could not fetch PDF for AI analysis")
 
-                            except Exception as ai_error:
-                                logger.error(f"❌ ENHANCED: Error in AI analysis: {ai_error}")
+                                except Exception as ai_error:
+                                    logger.error(f"❌ ENHANCED: Error in AI analysis: {ai_error}")
 
                         except Exception as e:
                             logger.error(f"❌ ENHANCED: Error sending notifications for {news_id}: {e}")
@@ -390,52 +378,4 @@ def bse_announcements_enhanced():
             'error': str(e),
             'timestamp': datetime.now().isoformat(),
             'table_used': "seen_announcements (existing, enhanced)"
-        }), 500
-
-@enhanced_bse_bp.route('/cron/cleanup_seen_announcements', methods=['GET'])
-def cleanup_seen_announcements():
-    """Clean up old announcements from seen_announcements table"""
-
-    # Validate cron key
-    cron_key = request.args.get('key')
-    if cron_key != 'c78b684067c74784364e352c391ecad3':
-        return jsonify({
-            'ok': False,
-            'error': 'Unauthorized'
-        }), 403
-
-    try:
-        days_to_keep = int(request.args.get('days', 90))
-        sb_service = get_supabase_client(service_role=True)
-
-        if not sb_service:
-            return jsonify({
-                'ok': False,
-                'error': 'Database connection failed'
-            }), 500
-
-        # Delete old announcements using existing table structure
-        cutoff_date = ist_now() - timedelta(days=days_to_keep)
-        cutoff_str = cutoff_date.strftime('%Y-%m-%d %H:%M:%S')
-
-        # Using existing table structure - delete by date
-        delete_response = sb_service.table('seen_announcements').delete().lt('created_at', cutoff_str).execute()
-
-        deleted_count = len(delete_response.data) if delete_response.data else 0
-
-        logger.info(f"🧹 ENHANCED: Cleaned up {deleted_count} old records from seen_announcements")
-
-        return jsonify({
-            'ok': True,
-            'message': f"Cleaned up {deleted_count} old records from seen_announcements",
-            'days_kept': days_to_keep,
-            'table_used': 'seen_announcements (existing)',
-            'timestamp': datetime.now().isoformat()
-        })
-
-    except Exception as e:
-        logger.error(f"❌ ENHANCED: Error cleaning up seen_announcements: {e}")
-        return jsonify({
-            'ok': False,
-            'error': str(e)
         }), 500
