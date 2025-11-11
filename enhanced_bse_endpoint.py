@@ -114,8 +114,13 @@ def bse_announcements_enhanced():
                         logger.info(f"📝 ENHANCED: No monitored scripts for user {uid[:8]}")
                     continue
 
-                # Get user's BSE announcements by fetching for each script
-                since_dt = ist_now() - timedelta(hours=24)
+                # Get user's BSE announcements by fetching for each script (only last 1 hour by default)
+                hours_back = int(request.args.get('hours_back', os.environ.get('BSE_CRON_HOURS_BACK', '1')))
+                since_dt = ist_now() - timedelta(hours=hours_back)
+
+                if os.environ.get('BSE_VERBOSE', '0') == '1':
+                    logger.info(f"⏰ ENHANCED: Fetching announcements from last {hours_back} hours (since {since_dt.strftime('%Y-%m-%d %H:%M')})")
+
                 user_announcements = []
 
                 for scrip_record in scrips_response.data:
@@ -275,7 +280,8 @@ def bse_announcements_enhanced():
 
                                         analysis_result = analyze_pdf_bytes_with_gemini(
                                             pdf_response.content,
-                                            announcement
+                                            pdf_name,
+                                            str(scrip_code)
                                         )
 
                                         if analysis_result:
