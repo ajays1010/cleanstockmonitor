@@ -44,6 +44,73 @@ class EnhancedBSEDeduplication:
         content = ' '.join(content.split())  # Normalize whitespace
         return hashlib.sha256(content.encode()).hexdigest()[:16]
 
+    def is_result_notification_in_cooling_period(self, sb, user_id: str, scrip_code: str,
+                                               headline: str, category: str) -> Tuple[bool, str]:
+        """
+        Check if result notifications should be skipped due to recent notification
+
+        Prevents notification fatigue by implementing cooling periods:
+        - 3 hours cooling period for any result notifications for same script
+        - 1 week cooling period for financial results specifically
+        """
+        try:
+            from datetime import datetime, timedelta
+
+            # Check if this is a result-related announcement
+            h = headline.lower()
+            result_indicators = [
+                "financial results", "quarter ended", "half year ended", "year ended",
+                "quarterly results", "unaudited results", "audited results",
+                "board meeting", "profit", "loss", "revenue", "dividend"
+            ]
+
+            is_result_related = any(indicator in h for indicator in result_indicators)
+
+            if not is_result_related:
+                return False, "not_result_related"
+
+            # Determine cooling period
+            is_financial_result = any(term in h for term in ["financial results", "quarter ended", "half year ended"])
+
+            if is_financial_result:
+                # 1 week cooling for financial results
+                cooling_hours = 24 * 7  # 7 days
+                cooling_type = "financial_results_week"
+            else:
+                # 3 hours cooling for other result-related announcements
+                cooling_hours = 3
+                cooling_type = "result_3_hours"
+
+            # Check for recent notifications in cooling period
+            cooling_since = (datetime.now() - timedelta(hours=cooling_hours)).isoformat()
+
+            # Query recent notifications for this script and user
+            recent_response = sb.table('seen_announcements').select('*')\
+                .eq('user_id', user_id)\
+                .eq('scrip_code', str(scrip_code))\
+                .gte('created_at', cooling_since)\
+                .execute()
+
+            if recent_response.data and len(recent_response.data) > 0:
+                # Check if any recent notifications were result-related
+                for record in recent_response.data:
+                    recent_headline = record.get('headline', '').lower()
+                    recent_is_result = any(indicator in recent_headline for indicator in result_indicators)
+
+                    if recent_is_result:
+                        created_at = record.get('created_at', '')
+                        if self._verbose:
+                            logger.info(f"❄️ ENHANCED: Result notification in cooling period for {scrip_code}")
+                            logger.info(f"❄️ ENHANCED: Recent result sent at {created_at}, cooling type: {cooling_type}")
+                        return True, f"cooling_period_{cooling_type}"
+
+            return False, "outside_cooling_period"
+
+        except Exception as e:
+            logger.error(f"ENHANCED BSE: Error checking cooling period: {e}")
+            # If cooling check fails, allow sending
+            return False, "cooling_check_failed"
+
     def is_announcement_already_sent(self, sb, user_id: str, news_id: str, headline: str,
                                    company_name: str, ann_dt: str, category: str,
                                    scrip_code: str) -> Tuple[bool, str]:
@@ -59,6 +126,14 @@ class EnhancedBSEDeduplication:
         try:
             if self._verbose:
                 logger.info(f"🔍 ENHANCED BSE: Checking {news_id} for user {user_id[:8]}")
+
+            # NEW: Check cooling period for result notifications
+            is_cooling, cooling_reason = self.is_result_notification_in_cooling_period(
+                sb, user_id, scrip_code, headline, category
+            )
+
+            if is_cooling:
+                return True, f"cooling_period_{cooling_reason}"
 
             # 1. Use existing exact match check (already implemented)
             from database import db_seen_announcement_exists
@@ -155,6 +230,159 @@ class EnhancedBSEDeduplication:
         except Exception as e:
             logger.error(f"ENHANCED BSE: Error marking announcement sent: {e}")
             return False
+
+    def generate_content_signature(self, headline: str, scrip_code: str, ann_dt) -> str:
+        """
+        Generate a content signature to group similar announcements.
+
+        Returns a signature that groups announcements about the same event:
+        - Financial results for the same period
+        - Board meetings for the same date
+        - Contract wins for similar projects
+        """
+        if not headline:
+            return f"empty_{scrip_code}"
+
+        h = headline.lower()
+
+        # 1. FINANCIAL RESULTS - Group by financial period
+        financial_periods = [
+            "quarter ended", "half year ended", "year ended", "quarterly", "annual",
+            "financial results", "unaudited", "audited", "standalone", "consolidated"
+        ]
+
+        if any(period in h for period in financial_periods):
+            # Extract date patterns from financial announcements
+            import re
+
+            # Look for date patterns like "30th september 2025", "31-march-2025", "30.09.2025"
+            date_patterns = [
+                r'(\d{1,2}(?:st|nd|rd|th)?\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4})',
+                r'(\d{1,2}[-/\.]\d{1,2}[-/\.]\d{4})',
+                r'(\d{4}[-/\.]\d{1,2}[-/\.]\d{1,2})'
+            ]
+
+            extracted_dates = []
+            for pattern in date_patterns:
+                matches = re.findall(pattern, h)
+                extracted_dates.extend(matches)
+
+            # Create signature based on extracted dates
+            if extracted_dates:
+                # Normalize dates and sort
+                normalized_dates = []
+                for date_str in extracted_dates:
+                    # Remove ordinal suffixes and normalize separators
+                    clean_date = re.sub(r'(st|nd|rd|th)', '', date_str.lower())
+                    clean_date = re.sub(r'[./]', '-', clean_date)
+                    normalized_dates.append(clean_date)
+
+                dates_sig = '_'.join(sorted(set(normalized_dates)))
+                return f"financial_{scrip_code}_{dates_sig}"
+            else:
+                return f"financial_{scrip_code}_unknown_period"
+
+        # 2. BOARD MEETINGS - Group by meeting date
+        if "board meeting" in h:
+            # Extract meeting date
+            import re
+
+            meeting_date_patterns = [
+                r'(\d{1,2}(?:st|nd|rd|th)?\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4})',
+                r'(\d{1,2}[-/\.]\d{1,2}[-/\.]\d{4})'
+            ]
+
+            for pattern in meeting_date_patterns:
+                matches = re.findall(pattern, h)
+                if matches:
+                    # Use first meeting date found
+                    meeting_date = matches[0].lower()
+                    meeting_date = re.sub(r'(st|nd|rd|th)', '', meeting_date)
+                    meeting_date = re.sub(r'[./]', '-', meeting_date)
+                    return f"board_meeting_{scrip_code}_{meeting_date}"
+
+            return f"board_meeting_{scrip_code}_unknown_date"
+
+        # 3. CONTRACTS/WINS - Group by contract type and approximate value/time
+        contract_terms = ["order", "contract", "bagged", "secured", "won", "received"]
+        if any(term in h for term in contract_terms):
+            # Extract key contract identifiers
+            contract_patterns = [
+                r'(rs\.?\s*\d+(?:\,\d{3})*(?:\.\d+)?\s*(?:crore|lakh|million|billion))',
+                r'(worth\s+rs\.?\s*\d+(?:\,\d{3})*(?:\.\d+)?)',
+                r'(\d+(?:\,\d{3})*(?:\.\d+)?\s*(?:crore|lakh|million|billion))',
+            ]
+
+            contract_value = "unknown_value"
+            for pattern in contract_patterns:
+                matches = re.findall(pattern, h)
+                if matches:
+                    contract_value = re.sub(r'[^\w\d]', '_', matches[0].lower())
+                    break
+
+            return f"contract_{scrip_code}_{contract_value}"
+
+        # 4. DEFAULT - Use headline hash for other announcements
+        import hashlib
+        headline_hash = hashlib.md5(headline.encode()).hexdigest()[:8]
+        return f"other_{scrip_code}_{headline_hash}"
+
+    def group_announcements(self, announcements: list) -> dict:
+        """
+        Group announcements by content signature to identify duplicates.
+
+        Returns:
+            dict: {signature: [announcements_in_group]}
+        """
+        groups = {}
+
+        for ann in announcements:
+            headline = ann.get('headline', '')
+            scrip_code = ann.get('scrip_code', '')
+            ann_dt = ann.get('ann_dt')
+
+            signature = self.generate_content_signature(headline, scrip_code, ann_dt)
+
+            if signature not in groups:
+                groups[signature] = []
+            groups[signature].append(ann)
+
+        return groups
+
+    def select_best_announcement_from_group(self, group: list) -> dict:
+        """
+        Select the best announcement from a group of similar announcements.
+
+        Priority:
+        1. Announcement with PDF (most comprehensive)
+        2. Earlier announcement (usually the most complete)
+        3. Longer headline (more details)
+        """
+        if not group:
+            return None
+
+        if len(group) == 1:
+            return group[0]
+
+        # Sort by priority
+        def announcement_priority(ann):
+            has_pdf = 1 if ann.get('pdf_name') else 0
+            headline_length = len(ann.get('headline', ''))
+            # Earlier announcements get priority (inverse timestamp)
+            try:
+                ann_dt = ann.get('ann_dt')
+                if hasattr(ann_dt, 'timestamp'):
+                    earlier = -ann_dt.timestamp()
+                else:
+                    earlier = 0  # Fallback
+            except:
+                earlier = 0
+
+            return (has_pdf, earlier, headline_length)
+
+        # Sort by priority and return the best one
+        sorted_group = sorted(group, key=announcement_priority, reverse=True)
+        return sorted_group[0]
 
     def get_deduplication_stats(self, sb) -> Dict:
         """Get statistics from existing seen_announcements table"""

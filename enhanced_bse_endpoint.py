@@ -145,6 +145,30 @@ def bse_announcements_enhanced():
                         logger.info(f"📭 ENHANCED: No announcements found for user {uid[:8]}")
                     continue
 
+                # SMART GROUPING: Group similar announcements to avoid duplicate notifications for same event
+                groups = dedup.group_announcements(user_announcements)
+                original_count = len(user_announcements)
+                grouped_announcements = []
+
+                for signature, group_anns in groups.items():
+                    best_ann = dedup.select_best_announcement_from_group(group_anns)
+                    if best_ann:
+                        grouped_announcements.append(best_ann)
+
+                    if os.environ.get('BSE_VERBOSE', '0') == '1':
+                        if len(group_anns) > 1:
+                            logger.info(f"🔗 ENHANCED: Grouped {len(group_anns)} announcements for {signature}")
+                            logger.info(f"🔗 ENHANCED: Selected best: {best_ann.get('headline', '')[:60]}...")
+                            for skipped_ann in group_anns:
+                                if skipped_ann['news_id'] != best_ann['news_id']:
+                                    logger.info(f"🔗 ENHANCED: Skipped duplicate: {skipped_ann.get('headline', '')[:60]}...")
+
+                user_announcements = grouped_announcements
+
+                if os.environ.get('BSE_VERBOSE', '0') == '1':
+                    if original_count > len(user_announcements):
+                        logger.info(f"🎯 ENHANCED: Smart grouping reduced {original_count} announcements to {len(user_announcements)} for user {uid[:8]}")
+
                 totals["total_announcements_found"] += len(user_announcements)
 
                 user_notifications_sent = 0
@@ -268,54 +292,81 @@ def bse_announcements_enhanced():
                                 except Exception as pdf_error:
                                     logger.error(f"❌ ENHANCED: Error sending PDF {pdf_name}: {pdf_error}")
 
-                            # 3. Send AI analysis (if PDF available)
+                            # 3. Send AI analysis (if PDF available and passes smart filter)
                             if pdf_name and os.environ.get('ENABLE_AI_ANALYSIS', 'false').lower() == 'true':
                                 try:
+                                    from ai_service import should_run_ai_analysis, is_quarterly_results_document
+
+                                    # Smart filtering: Check if this announcement deserves AI analysis
+                                    should_analyze = should_run_ai_analysis(headline, category)
+                                    is_quarterly = is_quarterly_results_document(headline, category)
+
                                     if os.environ.get('BSE_VERBOSE', '0') == '1':
-                                        logger.info(f"🤖 ENHANCED: Starting AI analysis for {pdf_name}")
-
-                                    # Get PDF for AI analysis
-                                    pdf_response = requests.get(pdf_url, headers=BSE_HEADERS, timeout=30)
-                                    if pdf_response.status_code == 200 and pdf_response.content:
-
-                                        analysis_result = analyze_pdf_bytes_with_gemini(
-                                            pdf_response.content,
-                                            pdf_name,
-                                            str(scrip_code)
+                                        analysis_reason = "SMART FILTER: " + (
+                                            "Financial Results" if "financial" in headline.lower() or "result" in headline.lower() or category == 'financials' else
+                                            "Business Development" if any(term in headline.lower() for term in ["order", "contract", "bid", "win", "bagged", "secured"]) else
+                                            "Strategic Announcement" if any(term in headline.lower() for term in ["merger", "acquisition", "partnership", "expansion"]) else
+                                            "Other"
                                         )
+                                        logger.info(f"🧠 ENHANCED: AI Analysis Filter - {pdf_name}")
+                                        logger.info(f"🧠 ENHANCED: Headline: '{headline}'")
+                                        logger.info(f"🧠 ENHANCED: Category: '{category}'")
+                                        logger.info(f"🧠 ENHANCED: Should Analyze: {should_analyze} - {analysis_reason}")
 
-                                        if analysis_result:
-                                            ai_message = format_structured_telegram_message(
-                                                analysis_result,
-                                                str(scrip_code),
-                                                headline,
-                                                ann_dt,
-                                                is_quarterly=False
+                                    if should_analyze:
+                                        if os.environ.get('BSE_VERBOSE', '0') == '1':
+                                            logger.info(f"🤖 ENHANCED: Starting AI analysis for {pdf_name}")
+
+                                        # Get PDF for AI analysis
+                                        pdf_response = requests.get(pdf_url, headers=BSE_HEADERS, timeout=30)
+                                        if pdf_response.status_code == 200 and pdf_response.content:
+
+                                            analysis_result = analyze_pdf_bytes_with_gemini(
+                                                pdf_response.content,
+                                                pdf_name,
+                                                str(scrip_code)
                                             )
 
-                                            # Send AI analysis to each recipient
-                                            for recipient in recipients:
-                                                chat_id = recipient.get('chat_id')
-                                                user_name = recipient.get('user_name', 'User')
-                                                if chat_id:
-                                                    ai_response_post = post(
-                                                        f"{TELEGRAM_API_URL}/sendMessage",
-                                                        json={
-                                                            'chat_id': chat_id,
-                                                            'text': ai_message,
-                                                            'parse_mode': 'HTML'
-                                                        },
-                                                        timeout=10
-                                                    )
+                                            if analysis_result:
+                                                ai_message = format_structured_telegram_message(
+                                                    analysis_result,
+                                                    str(scrip_code),
+                                                    headline,
+                                                    ann_dt,
+                                                    is_quarterly=is_quarterly
+                                                )
 
-                                                    if ai_response_post.status_code == 200:
-                                                        if os.environ.get('BSE_VERBOSE', '0') == '1':
-                                                            logger.info(f"🤖 ENHANCED: Sent AI analysis {pdf_name} to {user_name}")
-                                                    else:
-                                                        logger.error(f"❌ ENHANCED: Failed to send AI analysis to {user_name} - HTTP {ai_response_post.status_code}")
+                                                # Send AI analysis to each recipient
+                                                for recipient in recipients:
+                                                    chat_id = recipient.get('chat_id')
+                                                    user_name = recipient.get('user_name', 'User')
+                                                    if chat_id:
+                                                        ai_response_post = post(
+                                                            f"{TELEGRAM_API_URL}/sendMessage",
+                                                            json={
+                                                                'chat_id': chat_id,
+                                                                'text': ai_message,
+                                                                'parse_mode': 'HTML'
+                                                            },
+                                                            timeout=10
+                                                        )
+
+                                                        if ai_response_post.status_code == 200:
+                                                            if os.environ.get('BSE_VERBOSE', '0') == '1':
+                                                                logger.info(f"🤖 ENHANCED: Sent AI analysis {pdf_name} to {user_name}")
+                                                        else:
+                                                            logger.error(f"❌ ENHANCED: Failed to send AI analysis to {user_name} - HTTP {ai_response_post.status_code}")
+                                            else:
+                                                if os.environ.get('BSE_VERBOSE', '0') == '1':
+                                                    logger.info(f"🤖 ENHANCED: AI analysis returned no results for {pdf_name}")
+                                        else:
+                                            logger.error(f"❌ ENHANCED: Failed to fetch PDF for AI analysis - HTTP {pdf_response.status_code}")
+                                    else:
+                                        if os.environ.get('BSE_VERBOSE', '0') == '1':
+                                            logger.info(f"🚫 ENHANCED: Skipped AI analysis for {pdf_name} - Not financial or business development")
 
                                 except Exception as ai_error:
-                                    logger.error(f"❌ ENHANCED: Error in AI analysis: {ai_error}")
+                                    logger.error(f"❌ ENHANCED: Error in AI analysis filtering: {ai_error}")
 
                         except Exception as e:
                             logger.error(f"❌ ENHANCED: Error sending notifications for {news_id}: {e}")

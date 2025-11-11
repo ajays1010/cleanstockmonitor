@@ -619,27 +619,92 @@ def is_quarterly_results_document(headline: str, category: str = None) -> bool:
     """Check if document is likely a quarterly results document"""
     if not headline:
         return False
-    
+
     h = headline.lower()
-    
+
     # Check for quarterly results indicators
     quarterly_indicators = [
         "unaudited financial results",
-        "quarterly results", 
+        "quarterly results",
         "unaudited results",
         "financial results",
         "q1", "q2", "q3", "q4",
         "quarter ended",
         "months ended"
     ]
-    
+
     # Must be categorized as financials and contain quarterly indicators
-    is_financial = (category == 'financials' or 
+    is_financial = (category == 'financials' or
                    ('unaudited' in h and ('result' in h or 'financial' in h)))
-    
+
     has_quarterly_terms = any(indicator in h for indicator in quarterly_indicators)
-    
+
     return is_financial and has_quarterly_terms
+
+
+def should_run_ai_analysis(headline: str, category: str = None) -> bool:
+    """
+    Hybrid AI analysis filter: Analyze financials + important business development announcements
+
+    Returns True if AI analysis should be run for this announcement
+    """
+    if not headline:
+        return False
+
+    h = headline.lower()
+
+    # 1. FINANCIAL RESULTS - Always analyze financial announcements
+    financial_indicators = [
+        "unaudited financial results", "quarterly results", "unaudited results",
+        "financial results", "q1", "q2", "q3", "q4", "quarter ended", "months ended",
+        "annual results", "audited results", "standalone financial results",
+        "consolidated financial results", "profit", "loss", "revenue", "ebitda",
+        "net profit", "bottom line", "top line", "earnings", "dividend"
+    ]
+
+    is_financial = (category == 'financials' or
+                   any(indicator in h for indicator in financial_indicators))
+
+    if is_financial:
+        return True
+
+    # 2. BUSINESS DEVELOPMENT - Analyze contracts, purchase orders, wins
+    business_dev_indicators = [
+        # Purchase Orders & Contracts
+        "purchase order", "purchase orders", "loa", "letter of award", "contract award",
+        "bagged order", "secured order", "received order", "won order", "new order",
+
+        # Bids & Tenders
+        "emerged as lowest bidder", "l1 bidder", "final bidder", "selected bidder",
+        "preferred bidder", "techno-commercial bid", "qualified bidder",
+
+        # Wins & Success
+        "bagged contract", "won contract", "secured contract", "received contract",
+        "contract win", "major contract", "significant order", "order book",
+
+        # Project & Business
+        "project awarded", "business win", "new business", "order inflow",
+        "order bagged", "deal won", "agreement signed", "memorandum of understanding"
+    ]
+
+    has_business_dev = any(indicator in h for indicator in business_dev_indicators)
+
+    if has_business_dev:
+        return True
+
+    # 3. STRATEGIC ANNOUNCEMENTS - Other important business events
+    strategic_indicators = [
+        "merger", "acquisition", "takeover", "demerger", "amalgamation",
+        "strategic partnership", "joint venture", "subsidiary", "investment",
+        "capacity expansion", "new facility", "plant expansion", "business expansion"
+    ]
+
+    has_strategic = any(indicator in h for indicator in strategic_indicators)
+
+    if has_strategic:
+        return True
+
+    return False
 
 
 def extract_financial_figures(text: str) -> dict:
