@@ -214,17 +214,20 @@ class EnhancedBSEDeduplication:
         Mark announcement as sent using existing db_save_seen_announcement function
         """
         try:
+            # Convert datetime to string for database storage
+            ann_dt_str = ann_dt.strftime('%Y-%m-%d %H:%M:%S') if hasattr(ann_dt, 'strftime') else str(ann_dt)
+
             # Use existing database function
             from database import db_save_seen_announcement
 
             caption = f"Company: {company_name}, Category: {category}"
             db_save_seen_announcement(
                 sb, user_id, news_id, str(scrip_code),
-                headline, pdf_name, ann_dt, caption, category
+                headline, pdf_name, ann_dt_str, caption, category
             )
 
             if self._verbose:
-                logger.info(f"✅ ENHANCED BSE: Marked {news_id} sent to {user_id[:8]} in existing table")
+                logger.info(f"ENHANCED BSE: Marked {news_id} sent to {user_id[:8]} in existing table")
             return True
 
         except Exception as e:
@@ -387,18 +390,18 @@ class EnhancedBSEDeduplication:
     def get_deduplication_stats(self, sb) -> Dict:
         """Get statistics from existing seen_announcements table"""
         try:
-            # Get total records - don't assume 'id' column exists
-            total_response = sb.table('seen_announcements').select('*', count='exact').execute()
-            total_count = getattr(total_response, 'count', 0) or 0
+            # Get total records - use safer query approach
+            total_response = sb.table('seen_announcements').select('user_id').execute()
+            total_count = len(total_response.data) if total_response.data else 0
 
             # Get records from last 24 hours
             yesterday = (datetime.now() - timedelta(hours=24)).isoformat()
-            recent_response = sb.table('seen_announcements').select('*', count='exact').gte('created_at', yesterday).execute()
-            recent_count = getattr(recent_response, 'count', 0) or 0
+            recent_response = sb.table('seen_announcements').select('user_id').gte('created_at', yesterday).execute()
+            recent_count = len(recent_response.data) if recent_response.data else 0
 
             # Get unique users today
             today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-            users_response = sb.table('seen_announcements').select('user_id', count='exact').gte('created_at', today).execute()
+            users_response = sb.table('seen_announcements').select('user_id').gte('created_at', today).execute()
             unique_users = len(set([r.get('user_id') for r in users_response.data])) if users_response.data else 0
 
             return {
