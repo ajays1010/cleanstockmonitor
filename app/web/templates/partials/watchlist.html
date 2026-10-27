@@ -19,6 +19,8 @@
                     hx-confirm="Stop watching {{ item.scrip.name }}?">Remove</button>
           </div>
 
+          {% include "partials/price_line.html" %}
+
           <p class="small alerts">
             {% if item.spike_pct %}Move of {{ item.spike_pct|num }}% or more{% else %}No move alert{% endif %}
             {% if item.price_above %} · Above ₹{{ '{:,.2f}'.format(item.price_above) }}{% endif %}
@@ -64,4 +66,5 @@
   {% else %}
     <p class="empty muted">Nothing on your watchlist yet. Search above to add your first scrip.</p>
   {% endif %}
+  {% include "partials/price_poller.html" %}
 </section>

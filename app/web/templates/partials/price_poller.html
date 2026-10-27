@@ -1,0 +1,3 @@
+{# Polls price lines every 60 s during market hours; re-sent without a trigger once the market closes. #}
+<div id="price-poller"{% if oob %} hx-swap-oob="true"{% endif %}
+  {% if live_prices %}hx-get="/watchlist/prices" hx-trigger="every 60s" hx-swap="none"{% endif %}></div>

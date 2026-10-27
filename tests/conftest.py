@@ -12,6 +12,7 @@ from app.core.watchlist import Scrip, WatchItem, WatchlistError, rank_matches
 from app.web.deps import (
     get_auth,
     get_bot_username,
+    get_prices,
     get_profiles,
     get_sender,
     get_telegram_links,
@@ -164,9 +165,26 @@ class FakeSender:
         return SendResult(ok=True)
 
 
+class FakePrices:
+    def __init__(self):
+        self.views_by_scrip: dict = {}
+        self.refreshed: list[int] = []
+
+    def views(self, scrip_ids):
+        return {i: v for i, v in self.views_by_scrip.items() if i in scrip_ids}
+
+    def refresh(self, scrip_id):
+        self.refreshed.append(scrip_id)
+
+
 @pytest.fixture
 def fakes():
     return FakeAuth(), FakeProfiles()
+
+
+@pytest.fixture
+def prices():
+    return FakePrices()
 
 
 @pytest.fixture
@@ -185,12 +203,13 @@ def sender():
 
 
 @pytest.fixture
-def client(fakes, watchlist, links, sender):
+def client(fakes, watchlist, links, sender, prices):
     auth, profiles = fakes
     app = create_app()
     app.dependency_overrides[get_auth] = lambda: auth
     app.dependency_overrides[get_profiles] = lambda: profiles
     app.dependency_overrides[get_watchlist] = lambda: watchlist
+    app.dependency_overrides[get_prices] = lambda: prices
     app.dependency_overrides[get_telegram_links] = lambda: links
     app.dependency_overrides[get_bot_username] = lambda: "StockBuzzTestBot"
     app.dependency_overrides[get_sender] = lambda: sender

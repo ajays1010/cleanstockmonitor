@@ -10,6 +10,7 @@ from fastapi import Depends, HTTPException, Request
 from app.core import telegram
 from app.core.config import get_settings
 from app.core.db import get_db
+from app.core.prices import PriceStore
 from app.core.profiles import Profile, ProfileStore
 from app.core.supabase_auth import SupabaseAuth
 from app.core.telegram_links import TelegramLinkStore
@@ -39,6 +40,10 @@ def get_profiles() -> ProfileStore:
 
 def get_watchlist() -> WatchlistStore:
     return WatchlistStore(get_db)
+
+
+def get_prices() -> PriceStore:
+    return PriceStore(get_db)
 
 
 def get_telegram_links() -> TelegramLinkStore:

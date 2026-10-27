@@ -5,12 +5,20 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.core.categories import CATEGORIES
+from app.core.prices import PriceStore
 from app.core.profiles import Profile
 from app.core.telegram_links import TelegramLinkStore
-from app.core.watchlist import MAX_WATCHLIST, WatchlistStore
-from app.web.deps import get_bot_username, get_telegram_links, get_watchlist, optional_user, require_user
+from app.core.watchlist import WatchlistStore
+from app.web.deps import (
+    get_bot_username,
+    get_prices,
+    get_telegram_links,
+    get_watchlist,
+    optional_user,
+    require_user,
+)
 from app.web.routes.telegram import panel_context
+from app.web.routes.watchlist import watchlist_context
 from app.web.templating import templates
 
 router = APIRouter()
@@ -28,6 +36,7 @@ def dashboard(
     request: Request,
     user: Annotated[Profile, Depends(require_user)],
     store: Annotated[WatchlistStore, Depends(get_watchlist)],
+    prices: Annotated[PriceStore, Depends(get_prices)],
     links: Annotated[TelegramLinkStore, Depends(get_telegram_links)],
     bot: Annotated[str | None, Depends(get_bot_username)],
 ):
@@ -36,12 +45,7 @@ def dashboard(
         "dashboard.html",
         {
             "user": user,
-            "items": store.list(user.id),
-            "categories": CATEGORIES,
-            "max_items": MAX_WATCHLIST,
-            "message": None,
-            "error": None,
-            "error_item": None,
+            **watchlist_context(store, prices, user),
             **panel_context(request, user, links, bot),
         },
     )
