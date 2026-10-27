@@ -29,6 +29,7 @@ class Scrip:
     bse_code: str
     name: str
     nse_symbol: str | None
+    bse_symbol: str | None = None
 
 
 @dataclass(frozen=True)
@@ -92,7 +93,13 @@ def _num(value) -> Decimal | None:
 
 
 def _scrip(row: dict) -> Scrip:
-    return Scrip(id=row["id"], bse_code=row["bse_code"], name=row["name"], nse_symbol=row.get("nse_symbol"))
+    return Scrip(
+        id=row["id"],
+        bse_code=row["bse_code"],
+        name=row["name"],
+        nse_symbol=row.get("nse_symbol"),
+        bse_symbol=row.get("bse_symbol"),
+    )
 
 
 def rank_matches(query: str, scrips: list[Scrip], limit: int) -> list[Scrip]:
@@ -101,10 +108,11 @@ def rank_matches(query: str, scrips: list[Scrip], limit: int) -> list[Scrip]:
 
     def score(s: Scrip) -> tuple[int, str]:
         symbol = (s.nse_symbol or "").lower()
+        bse_symbol = (s.bse_symbol or "").lower()
         name = s.name.lower()
-        if q in (s.bse_code, symbol):
+        if q in (s.bse_code, symbol, bse_symbol):
             rank = 0
-        elif symbol.startswith(q) or name.startswith(q):
+        elif symbol.startswith(q) or bse_symbol.startswith(q) or name.startswith(q):
             rank = 1
         else:
             rank = 2
@@ -125,10 +133,10 @@ class WatchlistStore:
         q = _SPACES.sub(" ", _UNSAFE.sub("", query)).strip()
         if len(q) < 2:
             return []
-        filters = f"name.ilike.*{q}*,nse_symbol.ilike.{q}*,bse_code.like.{q}*"
+        filters = f"name.ilike.*{q}*,nse_symbol.ilike.{q}*,bse_symbol.ilike.{q}*,bse_code.like.{q}*"
         rows = (
             self.db.table("scrips")
-            .select("id, bse_code, name, nse_symbol")
+            .select("id, bse_code, name, nse_symbol, bse_symbol")
             .eq("is_active", True)
             .or_(filters)
             .limit(40)
@@ -141,7 +149,8 @@ class WatchlistStore:
         rows = (
             self.db.table("watchlist")
             .select(
-                "id, spike_pct, price_above, price_below, categories, scrips(id, bse_code, name, nse_symbol)"
+                "id, spike_pct, price_above, price_below, categories, "
+                "scrips(id, bse_code, name, nse_symbol, bse_symbol)"
             )
             .eq("user_id", user_id)
             .execute()

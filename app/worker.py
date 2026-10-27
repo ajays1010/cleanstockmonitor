@@ -12,6 +12,7 @@ from app.core.logging import setup_logging
 from app.core.timeutil import IST
 from app.jobs import market
 from app.jobs.heartbeat import heartbeat
+from app.jobs.scrips import sync_scrips
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +36,8 @@ def build_scheduler() -> BlockingScheduler:
         market.daily_summary, "cron", hour=16, minute=0, day_of_week="mon-fri", id="daily_summary"
     )
     scheduler.add_job(market.cleanup, "cron", hour=2, minute=0, id="cleanup")
+    # New listings appear in the exchange lists the evening before or the morning of listing.
+    scheduler.add_job(sync_scrips, "cron", hour="6,20", minute=30, id="sync_scrips")
     return scheduler
 
 
