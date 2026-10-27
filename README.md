@@ -30,7 +30,7 @@ Migrations live in `supabase/migrations` and run in file order:
 2. `0002_seed_scrips.sql`: about 4,600 scrips, generated from `data/indian_stock_tickers.csv` by `python scripts/build_scrip_seed.py`.
 3. `0003_auth_trigger.sql`: creates a `profiles` row when a user signs up.
 
-Apply them with the Supabase CLI (`supabase link`, then `supabase db push`), or paste each file into the SQL editor in order.
+Apply them with `python scripts/apply_migrations.py` (add `--dry-run` to list what is pending). It needs `DATABASE_URL` in `.env`, from Supabase > Connect > Session pooler, with the password written plainly (no brackets). Each file runs once and is recorded in `schema_migrations`.
 
 ## Sign-in setup (Supabase dashboard)
 
