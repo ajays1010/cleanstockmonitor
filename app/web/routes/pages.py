@@ -1,12 +1,14 @@
-"""Signed-in pages. Watchlist and Telegram linking land here in the next steps."""
+"""Signed-in pages. Telegram linking lands on the dashboard in the next step."""
 
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.core.categories import CATEGORIES
 from app.core.profiles import Profile
-from app.web.deps import optional_user, require_user
+from app.core.watchlist import MAX_WATCHLIST, WatchlistStore
+from app.web.deps import get_watchlist, optional_user, require_user
 from app.web.templating import templates
 
 router = APIRouter()
@@ -20,5 +22,21 @@ def home(request: Request, user: Annotated[Profile | None, Depends(optional_user
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
-def dashboard(request: Request, user: Annotated[Profile, Depends(require_user)]):
-    return templates.TemplateResponse(request, "dashboard.html", {"user": user})
+def dashboard(
+    request: Request,
+    user: Annotated[Profile, Depends(require_user)],
+    store: Annotated[WatchlistStore, Depends(get_watchlist)],
+):
+    return templates.TemplateResponse(
+        request,
+        "dashboard.html",
+        {
+            "user": user,
+            "items": store.list(user.id),
+            "categories": CATEGORIES,
+            "max_items": MAX_WATCHLIST,
+            "message": None,
+            "error": None,
+            "error_item": None,
+        },
+    )

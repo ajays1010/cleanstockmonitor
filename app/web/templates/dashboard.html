@@ -1,6 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Dashboard · StockMonitor{% endblock %}
 {% block content %}
-  <h1>Welcome{% if user.display_name %}, {{ user.display_name }}{% endif %}</h1>
-  <p class="muted">Your watchlist and Telegram connection will appear here.</p>
+  <h1>Your watchlist</h1>
+
+  <section class="search">
+    <label for="q">Add a scrip</label>
+    <input id="q" name="q" type="search" placeholder="Name, NSE symbol or BSE code" autocomplete="off"
+           hx-get="/watchlist/search" hx-trigger="input changed delay:300ms, search"
+           hx-target="#search-results">
+    <div id="search-results" aria-live="polite"></div>
+  </section>
+
+  {% include "partials/watchlist.html" %}
+
+  <p class="muted small">Telegram connection comes next; alerts start once a chat is linked.</p>
 {% endblock %}

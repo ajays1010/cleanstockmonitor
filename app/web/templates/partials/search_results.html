@@ -1,0 +1,25 @@
+{% if q and q|length >= 2 %}
+  {% if results %}
+    <ul class="results">
+      {% for s in results %}
+        <li>
+          <span>
+            <strong>{{ s.name }}</strong>
+            <span class="muted small">{% if s.nse_symbol %}{{ s.nse_symbol }} · {% endif %}BSE {{ s.bse_code }}</span>
+          </span>
+          {% if s.id in watched %}
+            <span class="muted small">Watching</span>
+          {% else %}
+            <form hx-post="/watchlist/add" hx-target="#watchlist" hx-swap="outerHTML"
+                  hx-on::after-request="if (event.detail.successful) { document.getElementById('search-results').innerHTML = ''; document.getElementById('q').value = ''; }">
+              <input type="hidden" name="scrip_id" value="{{ s.id }}">
+              <button type="submit" class="button small">Add</button>
+            </form>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted small">No scrips match “{{ q }}”.</p>
+  {% endif %}
+{% endif %}

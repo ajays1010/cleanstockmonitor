@@ -1,0 +1,67 @@
+<section id="watchlist">
+  {% if message %}<p class="notice" role="status">{{ message }}</p>{% endif %}
+  {% if error and not error_item %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+
+  {% if items %}
+    <p class="muted small">{{ items|length }} of {{ max_items }} scrips</p>
+    <ul class="watch">
+      {% for item in items %}
+        <li class="card">
+          <div class="watch-head">
+            <div>
+              <strong>{{ item.scrip.name }}</strong>
+              <div class="muted small">
+                {% if item.scrip.nse_symbol %}{{ item.scrip.nse_symbol }} · {% endif %}BSE {{ item.scrip.bse_code }}
+              </div>
+            </div>
+            <button type="button" class="link danger" hx-post="/watchlist/{{ item.id }}/remove"
+                    hx-target="#watchlist" hx-swap="outerHTML"
+                    hx-confirm="Stop watching {{ item.scrip.name }}?">Remove</button>
+          </div>
+
+          <p class="small alerts">
+            {% if item.spike_pct %}Move of {{ item.spike_pct|num }}% or more{% else %}No move alert{% endif %}
+            {% if item.price_above %} · Above ₹{{ '{:,.2f}'.format(item.price_above) }}{% endif %}
+            {% if item.price_below %} · Below ₹{{ '{:,.2f}'.format(item.price_below) }}{% endif %}
+            · {% if item.categories %}{{ item.categories|length }} announcement type{{ 's' if item.categories|length != 1 }}{% else %}All announcements{% endif %}
+          </p>
+
+          <details {% if error_item == item.id %}open{% endif %}>
+            <summary>Alert settings</summary>
+            {% if error_item == item.id %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+            <form class="settings" hx-post="/watchlist/{{ item.id }}/settings"
+                  hx-target="#watchlist" hx-swap="outerHTML">
+              <div class="fields">
+                <label>Move alert (% vs previous close)
+                  <input name="spike_pct" inputmode="decimal" placeholder="Off"
+                         value="{{ item.spike_pct|num }}">
+                </label>
+                <label>Price above (₹)
+                  <input name="price_above" inputmode="decimal" placeholder="Off"
+                         value="{{ item.price_above|num }}">
+                </label>
+                <label>Price below (₹)
+                  <input name="price_below" inputmode="decimal" placeholder="Off"
+                         value="{{ item.price_below|num }}">
+                </label>
+              </div>
+              <fieldset>
+                <legend>Announcements to send</legend>
+                {% for key, label in categories.items() %}
+                  <label class="check">
+                    <input type="checkbox" name="categories" value="{{ key }}"
+                           {% if not item.categories or key in item.categories %}checked{% endif %}>
+                    {{ label }}
+                  </label>
+                {% endfor %}
+              </fieldset>
+              <button type="submit" class="button small">Save</button>
+            </form>
+          </details>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty muted">Nothing on your watchlist yet. Search above to add your first scrip.</p>
+  {% endif %}
+</section>

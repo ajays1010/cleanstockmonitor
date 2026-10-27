@@ -4,12 +4,13 @@ from functools import lru_cache
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request
 
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.profiles import Profile, ProfileStore
 from app.core.supabase_auth import SupabaseAuth
+from app.core.watchlist import WatchlistStore
 
 SESSION_USER_KEY = "uid"
 
@@ -31,6 +32,17 @@ def get_auth() -> SupabaseAuth:
 
 def get_profiles() -> ProfileStore:
     return ProfileStore(get_db)
+
+
+def get_watchlist() -> WatchlistStore:
+    return WatchlistStore(get_db)
+
+
+def require_htmx(request: Request) -> None:
+    """Changes must come from our own pages. A cross-site form cannot set this header,
+    and cross-site scripts cannot send it without a CORS preflight we never allow."""
+    if request.headers.get("HX-Request") != "true":
+        raise HTTPException(status_code=403, detail="Forbidden")
 
 
 def optional_user(
