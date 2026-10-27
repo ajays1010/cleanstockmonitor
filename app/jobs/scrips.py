@@ -5,21 +5,37 @@ New listings are added, names and symbols updated, and scrips that left BSE's ac
 list are marked inactive (hidden from search; existing watchlist rows keep working).
 """
 
+import logging
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import httpx
 
 from app.core.db import get_db
 from app.jobs.runner import tracked
-from app.sources.scrip_master import fetch_all
+from app.sources.fyers import fetch_symbol_master
+from app.sources.scrip_master import ScripRow, fetch_all
+
+log = logging.getLogger(__name__)
 
 BATCH = 500
+
+
+def with_fyers_symbols(rows: list[ScripRow], nse: dict[str, str], bse: dict[str, str]) -> list[ScripRow]:
+    """Fyers ticker per scrip: NSE (main board or SME) by ISIN where it trades there, else BSE by code."""
+    return [
+        replace(r, fyers_symbol=(nse.get(r.isin) if r.isin else None) or bse.get(r.bse_code)) for r in rows
+    ]
 
 
 @tracked("sync_scrips")
 def sync_scrips() -> dict:
     with httpx.Client() as http:
         rows = fetch_all(http)
+        try:
+            rows = with_fyers_symbols(rows, *fetch_symbol_master(http))
+        except httpx.HTTPError as exc:  # keep the exchange data; Fyers symbols stay as derived
+            log.warning("Fyers symbol master unavailable: %s", exc)
     db = get_db()
     existing = set()
     page = 0
@@ -47,6 +63,7 @@ def sync_scrips() -> dict:
         "added": len(added),
         "deactivated": len(gone),
         "with_nse": sum(1 for r in rows if r.nse_symbol),
+        "with_fyers": sum(1 for r in rows if r.fyers_symbol),
         "sample_added": [r.name for r in added[:10]],
     }
 

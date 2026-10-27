@@ -10,11 +10,13 @@ from fastapi import Depends, HTTPException, Request
 from app.core import telegram
 from app.core.config import get_settings
 from app.core.db import get_db
+from app.core.fyers_tokens import TokenStore, fyers_client
 from app.core.prices import PriceStore
 from app.core.profiles import Profile, ProfileStore
 from app.core.supabase_auth import SupabaseAuth
 from app.core.telegram_links import TelegramLinkStore
 from app.core.watchlist import WatchlistStore
+from app.sources.fyers import FyersClient
 
 SESSION_USER_KEY = "uid"
 
@@ -44,6 +46,25 @@ def get_watchlist() -> WatchlistStore:
 
 def get_prices() -> PriceStore:
     return PriceStore(get_db)
+
+
+def get_fyers() -> FyersClient:
+    return fyers_client()
+
+
+def get_tokens() -> TokenStore:
+    return TokenStore(get_db)
+
+
+def get_job_runs() -> Callable[[], list[dict]]:
+    def latest() -> list[dict]:
+        rows = get_db().table("job_runs").select("*").order("id", desc=True).limit(300).execute().data
+        seen: dict[str, dict] = {}
+        for r in rows:
+            seen.setdefault(r["job"], r)
+        return sorted(seen.values(), key=lambda r: r["job"])
+
+    return latest
 
 
 def get_telegram_links() -> TelegramLinkStore:

@@ -10,7 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.web.deps import AdminRequired, LoginRequired, login_url
-from app.web.routes import auth, pages, telegram, watchlist
+from app.web.routes import admin, auth, pages, telegram, watchlist
 
 HERE = Path(__file__).parent
 
@@ -53,6 +53,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(watchlist.router)
     app.include_router(telegram.router)
+    app.include_router(admin.router)
     return app
 
 

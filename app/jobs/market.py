@@ -14,11 +14,11 @@ import httpx
 
 from app.core import alerts
 from app.core.db import get_db
+from app.core.quote_source import fetch_quotes, snapshot_row
 from app.core.telegram import send_message
 from app.core.timeutil import IST, MARKET_OPEN, now_ist
 from app.jobs.runner import tracked
 from app.sources.bse import BseError, fetch_announcements
-from app.sources.quotes import fetch_yahoo
 
 log = logging.getLogger(__name__)
 
@@ -86,34 +86,14 @@ def poll_prices() -> dict:
 
     rows = _watchlist()
     scrips = _distinct_scrips(rows)
-    quotes, stale = {}, 0
-    with httpx.Client() as http:
-        for scrip_id, scrip in scrips.items():
-            symbol = scrip.get("yahoo_symbol")
-            quote = fetch_yahoo(symbol, http) if symbol else None
-            if quote is None:
-                continue
-            if quote.quoted_at.date() != now.date():  # holiday or no trade today
-                stale += 1
-                continue
-            quotes[scrip_id] = quote
+    fetched = fetch_quotes(list(scrips.values()))
+    # A quote not stamped today means a holiday or no trade today: never alert on it.
+    quotes = {i: q for i, q in fetched.items() if q.quoted_at.date() == now.date()}
+    stale = len(fetched) - len(quotes)
 
     if quotes:
         get_db().table("price_snapshots").upsert(
-            [
-                {
-                    "scrip_id": scrip_id,
-                    "ltp": str(q.ltp),
-                    "prev_close": str(q.prev_close) if q.prev_close is not None else None,
-                    "day_high": str(q.day_high) if q.day_high is not None else None,
-                    "day_low": str(q.day_low) if q.day_low is not None else None,
-                    "volume": q.volume,
-                    "source": q.source,
-                    "quoted_at": q.quoted_at.isoformat(),
-                }
-                for scrip_id, q in quotes.items()
-            ],
-            on_conflict="scrip_id",
+            [snapshot_row(scrip_id, q) for scrip_id, q in quotes.items()], on_conflict="scrip_id"
         ).execute()
 
     events = []
@@ -124,6 +104,7 @@ def poll_prices() -> dict:
     return {
         "scrips": len(scrips),
         "quotes": len(quotes),
+        "from_fyers": sum(1 for q in quotes.values() if q.source == "fyers"),
         "stale": stale,
         "new_alerts": _insert_events(events),
     }
@@ -264,15 +245,17 @@ def daily_summary() -> dict:
     return {"users": len(events), "new": _insert_events(events)}
 
 
+# Events (and their deliveries, by cascade) are kept a little longer than the BSE poll
+# window (2 days): the stored row is what tells the poller a filing was already handled.
+EVENT_RETENTION = timedelta(days=3)
+JOB_RUN_RETENTION = timedelta(days=7)
+
+
 @tracked("cleanup")
 def cleanup() -> dict:
     db = get_db()
     now = datetime.now(UTC)
     db.table("telegram_link_codes").delete().lt("expires_at", now.isoformat()).execute()
-    old_events = (
-        db.table("events").delete().lt("created_at", (now - timedelta(days=90)).isoformat()).execute()
-    )
-    old_runs = (
-        db.table("job_runs").delete().lt("started_at", (now - timedelta(days=30)).isoformat()).execute()
-    )
+    old_events = db.table("events").delete().lt("created_at", (now - EVENT_RETENTION).isoformat()).execute()
+    old_runs = db.table("job_runs").delete().lt("started_at", (now - JOB_RUN_RETENTION).isoformat()).execute()
     return {"events_deleted": len(old_events.data), "job_runs_deleted": len(old_runs.data)}

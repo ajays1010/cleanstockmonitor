@@ -10,11 +10,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-import httpx
 from supabase import Client
 
+from app.core.quote_source import fetch_quotes, snapshot_row
 from app.core.timeutil import IST, is_market_open, now_ist
-from app.sources.quotes import fetch_yahoo
 
 log = logging.getLogger(__name__)
 
@@ -54,26 +53,18 @@ class PriceStore:
     def refresh(self, scrip_id: int) -> None:
         """Fetch one quote and store it. Never raises: a missing price must not block adding."""
         try:
-            rows = self.db.table("scrips").select("yahoo_symbol").eq("id", scrip_id).limit(1).execute().data
-            symbol = rows[0]["yahoo_symbol"] if rows else None
-            if not symbol:
-                return
-            with httpx.Client() as http:
-                quote = fetch_yahoo(symbol, http)
-            if quote is None:
-                return
-            self.db.table("price_snapshots").upsert(
-                {
-                    "scrip_id": scrip_id,
-                    "ltp": str(quote.ltp),
-                    "prev_close": str(quote.prev_close) if quote.prev_close is not None else None,
-                    "day_high": str(quote.day_high) if quote.day_high is not None else None,
-                    "day_low": str(quote.day_low) if quote.day_low is not None else None,
-                    "volume": quote.volume,
-                    "source": quote.source,
-                    "quoted_at": quote.quoted_at.isoformat(),
-                },
-                on_conflict="scrip_id",
-            ).execute()
+            rows = (
+                self.db.table("scrips")
+                .select("id, yahoo_symbol, fyers_symbol")
+                .eq("id", scrip_id)
+                .limit(1)
+                .execute()
+                .data
+            )
+            quote = fetch_quotes(rows).get(scrip_id) if rows else None
+            if quote is not None:
+                self.db.table("price_snapshots").upsert(
+                    snapshot_row(scrip_id, quote), on_conflict="scrip_id"
+                ).execute()
         except Exception:
             log.exception("Could not refresh the price of scrip %s", scrip_id)

@@ -14,6 +14,7 @@
     <a class="brand" href="/">StockMonitor</a>
     <nav>
       {% if user %}
+        {% if user.is_admin %}<a href="/admin">Admin</a>{% endif %}
         <span>{{ user.display_name or user.email }}</span>
         <form method="post" action="/logout" class="inline">
           <button type="submit" class="link">Sign out</button>

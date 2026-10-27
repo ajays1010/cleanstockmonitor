@@ -11,6 +11,7 @@ from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.core.timeutil import IST
 from app.jobs import market
+from app.jobs.fyers_refresh import refresh_fyers_token
 from app.jobs.heartbeat import heartbeat
 from app.jobs.scrips import sync_scrips
 
@@ -38,6 +39,8 @@ def build_scheduler() -> BlockingScheduler:
     scheduler.add_job(market.cleanup, "cron", hour=2, minute=0, id="cleanup")
     # New listings appear in the exchange lists the evening before or the morning of listing.
     scheduler.add_job(sync_scrips, "cron", hour="6,20", minute=30, id="sync_scrips")
+    # Fyers access tokens expire at 06:30 IST; mint a fresh one before the market opens.
+    scheduler.add_job(refresh_fyers_token, "cron", hour=6, minute=45, id="refresh_fyers_token")
     return scheduler
 
 
