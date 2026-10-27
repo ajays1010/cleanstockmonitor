@@ -13,6 +13,7 @@ dependencies = [
   "supabase>=2.10,<3",
   "pydantic-settings>=2.4",
   "apscheduler>=3.10,<4",
+  "segno>=1.6",
 ]
 
 [project.optional-dependencies]

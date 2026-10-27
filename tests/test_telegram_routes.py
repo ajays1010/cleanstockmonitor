@@ -16,6 +16,8 @@ def test_connect_shows_one_time_links_and_polls(signed_in, links, fakes):
     assert links.codes[code][0] == user_id(fakes)
     assert f"https://t.me/StockBuzzTestBot?start={code}" in resp.text
     assert f"https://t.me/StockBuzzTestBot?startgroup={code}" in resp.text
+    assert f"/start {code}" in resp.text
+    assert 'class="qr"' in resp.text
     assert 'hx-trigger="every 3s"' in resp.text
 
 

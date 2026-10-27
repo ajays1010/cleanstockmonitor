@@ -1,13 +1,16 @@
 """Telegram panel on the dashboard: connect a chat, send a test message, disconnect.
 
-Connecting creates a one-time code and shows two bot links (private chat, or add to a
-group). The panel then polls until the bot reports the new chat, for up to 10 minutes.
+Connecting creates a one-time code and shows it three ways: a QR code to scan with a
+phone, bot links (private chat, or add to a group), and a /start command to send by hand.
+The panel then polls until the bot reports the new chat, for up to 10 minutes.
 """
 
+import io
 import time
 from collections.abc import Callable
 from typing import Annotated
 
+import segno
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 
@@ -35,7 +38,17 @@ def panel_context(request: Request, user: Profile, links: TelegramLinkStore, bot
             message = "Connected. Alerts will go to this chat."
         request.session.pop(PENDING_KEY, None)
         pending = None
-    return {"bot": bot, "chats": chats, "pending": pending, "tg_message": message, "tg_error": None}
+    qr = qr_svg(f"https://t.me/{bot}?start={pending['code']}") if pending and bot else None
+    return {"bot": bot, "chats": chats, "pending": pending, "qr": qr, "tg_message": message, "tg_error": None}
+
+
+def qr_svg(url: str) -> str:
+    """Inline SVG QR code. Dark on white in both themes, so phone cameras can read it."""
+    buf = io.BytesIO()
+    segno.make(url, error="m").save(
+        buf, kind="svg", scale=4, border=2, dark="#000000", light="#ffffff", xmldecl=False, svgclass="qr"
+    )
+    return buf.getvalue().decode("utf-8")
 
 
 def render_panel(request: Request, context: dict, status_code: int = 200) -> HTMLResponse:

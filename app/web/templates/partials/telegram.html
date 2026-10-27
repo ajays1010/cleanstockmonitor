@@ -28,12 +28,25 @@
 
     {% if pending %}
       <div class="connect-steps">
-        <p><strong>Waiting for Telegram…</strong> Open one of these links and tap <b>Start</b>:</p>
-        <p class="stack">
-          <a class="button" href="https://t.me/{{ bot }}?start={{ pending.code }}" target="_blank" rel="noopener">Open private chat with @{{ bot }}</a>
-          <a class="button secondary" href="https://t.me/{{ bot }}?startgroup={{ pending.code }}" target="_blank" rel="noopener">Add @{{ bot }} to a group</a>
-        </p>
-        <p class="muted small">The link works once and expires in 10 minutes. This page updates when the chat is connected.</p>
+        <p><strong>Waiting for Telegram…</strong></p>
+        <div class="connect-grid">
+          {% if qr %}
+            <div class="qr-box">
+              {{ qr|safe }}
+              <p class="small">Scan with your phone camera, then tap <b>Start</b> in Telegram.</p>
+            </div>
+          {% endif %}
+          <div class="connect-options">
+            <p class="small">On a device with the Telegram app:</p>
+            <p class="stack">
+              <a class="button" href="https://t.me/{{ bot }}?start={{ pending.code }}" target="_blank" rel="noopener">Open private chat with @{{ bot }}</a>
+              <a class="button secondary" href="https://t.me/{{ bot }}?startgroup={{ pending.code }}" target="_blank" rel="noopener">Add @{{ bot }} to a group</a>
+            </p>
+            <p class="small">Or send this message to @{{ bot }}:</p>
+            <p><code class="copyable">/start {{ pending.code }}</code></p>
+          </div>
+        </div>
+        <p class="muted small">The code works once and expires in 10 minutes. This page updates when the chat is connected.</p>
         <button type="button" class="link" hx-post="/telegram/cancel" hx-target="#telegram" hx-swap="outerHTML">Cancel</button>
       </div>
     {% else %}
