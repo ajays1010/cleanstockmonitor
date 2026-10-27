@@ -12,8 +12,10 @@
     <a class="brand" href="/">StockMonitor</a>
     <nav>
       {% if user %}
-        <span>{{ user.email }}</span>
-        <a href="/logout">Sign out</a>
+        <span>{{ user.display_name or user.email }}</span>
+        <form method="post" action="/logout" class="inline">
+          <button type="submit" class="link">Sign out</button>
+        </form>
       {% else %}
         <a href="/login">Sign in</a>
       {% endif %}

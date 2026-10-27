@@ -32,6 +32,16 @@ Migrations live in `supabase/migrations` and run in file order:
 
 Apply them with the Supabase CLI (`supabase link`, then `supabase db push`), or paste each file into the SQL editor in order.
 
+## Sign-in setup (Supabase dashboard)
+
+Users sign in with Google or a 6-digit code by email. Supabase only proves who they are; the app then keeps its own signed session cookie holding the user id.
+
+1. **Authentication > URL Configuration:** set Site URL to `APP_BASE_URL`, and add `<APP_BASE_URL>/auth/callback` to Redirect URLs (plus `http://localhost:8001/auth/callback` for local work).
+2. **Authentication > Providers > Google:** enable it and paste a client ID and secret from Google Cloud console (OAuth client, type Web). In Google, the authorised redirect URI is `https://<project>.supabase.co/auth/v1/callback`.
+3. **Authentication > Email Templates > Magic Link:** include `{{ .Token }}` in the body so the email carries the 6-digit code, for example `Your StockMonitor code is {{ .Token }}`.
+4. **Authentication > SMTP Settings:** set up your own SMTP sender (for example Resend or Brevo). Supabase's built-in sender is rate-limited and meant for testing only.
+5. To make yourself admin, set `is_admin = true` on your row in `profiles` after your first sign-in.
+
 ## Deploy on the VPS
 
 ```bash

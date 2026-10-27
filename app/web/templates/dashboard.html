@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · StockMonitor{% endblock %}
+{% block content %}
+  <h1>Welcome{% if user.display_name %}, {{ user.display_name }}{% endif %}</h1>
+  <p class="muted">Your watchlist and Telegram connection will appear here.</p>
+{% endblock %}
