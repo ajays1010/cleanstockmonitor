@@ -1,0 +1,44 @@
+<section id="telegram" class="card"
+  {% if pending %}hx-get="/telegram/panel" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+  <h2>Telegram</h2>
+  {% if tg_message %}<p class="notice" role="status">{{ tg_message }}</p>{% endif %}
+  {% if tg_error %}<p class="error" role="alert">{{ tg_error }}</p>{% endif %}
+
+  {% if not bot %}
+    <p class="muted">The Telegram bot is not set up yet. Add <code>TELEGRAM_BOT_TOKEN</code> to the server settings.</p>
+  {% else %}
+    {% if chats %}
+      <ul class="chats">
+        {% for chat in chats %}
+          <li>
+            <span>{{ chat.label or "Telegram chat" }}</span>
+            <span class="actions">
+              <button type="button" class="link" hx-post="/telegram/{{ chat.id }}/test"
+                      hx-target="#telegram" hx-swap="outerHTML">Send test</button>
+              <button type="button" class="link danger" hx-post="/telegram/{{ chat.id }}/remove"
+                      hx-target="#telegram" hx-swap="outerHTML"
+                      hx-confirm="Stop sending alerts to {{ chat.label or 'this chat' }}?">Disconnect</button>
+            </span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% elif not pending %}
+      <p class="muted">Connect a chat to start receiving alerts.</p>
+    {% endif %}
+
+    {% if pending %}
+      <div class="connect-steps">
+        <p><strong>Waiting for Telegram…</strong> Open one of these links and tap <b>Start</b>:</p>
+        <p class="stack">
+          <a class="button" href="https://t.me/{{ bot }}?start={{ pending.code }}" target="_blank" rel="noopener">Open private chat with @{{ bot }}</a>
+          <a class="button secondary" href="https://t.me/{{ bot }}?startgroup={{ pending.code }}" target="_blank" rel="noopener">Add @{{ bot }} to a group</a>
+        </p>
+        <p class="muted small">The link works once and expires in 10 minutes. This page updates when the chat is connected.</p>
+        <button type="button" class="link" hx-post="/telegram/cancel" hx-target="#telegram" hx-swap="outerHTML">Cancel</button>
+      </div>
+    {% else %}
+      <button type="button" class="button small" hx-post="/telegram/connect"
+              hx-target="#telegram" hx-swap="outerHTML">{{ "Connect another chat" if chats else "Connect Telegram" }}</button>
+    {% endif %}
+  {% endif %}
+</section>

@@ -6,8 +6,17 @@ from fastapi.testclient import TestClient
 
 from app.core.profiles import Profile
 from app.core.supabase_auth import AuthError, AuthUser
+from app.core.telegram import SendResult
+from app.core.telegram_links import LinkedChat
 from app.core.watchlist import Scrip, WatchItem, WatchlistError, rank_matches
-from app.web.deps import get_auth, get_profiles, get_watchlist
+from app.web.deps import (
+    get_auth,
+    get_bot_username,
+    get_profiles,
+    get_sender,
+    get_telegram_links,
+    get_watchlist,
+)
 from app.web.main import create_app
 
 
@@ -99,6 +108,62 @@ class FakeWatchlist:
         )
 
 
+class FakeLinks:
+    def __init__(self):
+        self.codes: dict[str, tuple[str, bool]] = {}  # code -> (user_id, expired)
+        self.chats: dict[int, LinkedChat] = {}
+        self.next_id = 1
+
+    def create_code(self, user_id):
+        self.codes = {c: v for c, v in self.codes.items() if v[0] != user_id}
+        code = f"code-{len(self.codes) + 1}-{user_id}"
+        self.codes[code] = (user_id, False)
+        return code
+
+    def consume_code(self, code):
+        user_id, expired = self.codes.pop(code, (None, True))
+        return None if expired else user_id
+
+    def link(self, user_id, chat_id, label):
+        for row in self.chats.values():
+            if (row.user_id, row.chat_id) == (user_id, chat_id):
+                return
+        self.chats[self.next_id] = LinkedChat(self.next_id, user_id, chat_id, label)
+        self.next_id += 1
+
+    def chats_for_user(self, user_id):
+        return [c for c in self.chats.values() if c.user_id == user_id]
+
+    def users_for_chat(self, chat_id):
+        return [c.user_id for c in self.chats.values() if c.chat_id == chat_id]
+
+    def get_for_user(self, user_id, link_id):
+        chat = self.chats.get(link_id)
+        return chat if chat and chat.user_id == user_id else None
+
+    def remove_for_user(self, user_id, link_id):
+        if self.get_for_user(user_id, link_id):
+            del self.chats[link_id]
+
+    def unlink_chat(self, chat_id):
+        gone = [i for i, c in self.chats.items() if c.chat_id == chat_id]
+        for i in gone:
+            del self.chats[i]
+        return len(gone)
+
+
+class FakeSender:
+    def __init__(self):
+        self.sent: list[tuple[int, str]] = []
+        self.fail_with: str | None = None
+
+    def __call__(self, chat_id, text):
+        if self.fail_with:
+            return SendResult(ok=False, error=self.fail_with)
+        self.sent.append((chat_id, text))
+        return SendResult(ok=True)
+
+
 @pytest.fixture
 def fakes():
     return FakeAuth(), FakeProfiles()
@@ -110,12 +175,25 @@ def watchlist():
 
 
 @pytest.fixture
-def client(fakes, watchlist):
+def links():
+    return FakeLinks()
+
+
+@pytest.fixture
+def sender():
+    return FakeSender()
+
+
+@pytest.fixture
+def client(fakes, watchlist, links, sender):
     auth, profiles = fakes
     app = create_app()
     app.dependency_overrides[get_auth] = lambda: auth
     app.dependency_overrides[get_profiles] = lambda: profiles
     app.dependency_overrides[get_watchlist] = lambda: watchlist
+    app.dependency_overrides[get_telegram_links] = lambda: links
+    app.dependency_overrides[get_bot_username] = lambda: "StockBuzzTestBot"
+    app.dependency_overrides[get_sender] = lambda: sender
     return TestClient(app, follow_redirects=False)
 
 

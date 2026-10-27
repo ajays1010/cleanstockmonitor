@@ -42,6 +42,14 @@ Users sign in with Google or a 6-digit code by email. Supabase only proves who t
 4. **Authentication > SMTP Settings:** set up your own SMTP sender (for example Resend or Brevo). Supabase's built-in sender is rate-limited and meant for testing only.
 5. To make yourself admin, set `is_admin = true` on your row in `profiles` after your first sign-in.
 
+## Telegram bot
+
+1. In Telegram, message @BotFather, send `/newbot`, and put the token and username in `.env` as `TELEGRAM_BOT_TOKEN` and `TELEGRAM_BOT_USERNAME`.
+2. To let the bot be added to groups and read commands there, send BotFather `/setjoingroups` (Enable) and `/setprivacy` (Enable is fine: the bot only needs commands).
+3. Run it with `python -m app.bot`. It long-polls Telegram, so no public URL or webhook is needed. Run exactly one copy per token; locally, stop it before the VPS copy starts.
+
+Users connect a chat from the dashboard: **Connect Telegram** shows one-time links for a private chat or a group (valid 10 minutes). In the bot: `/list`, `/add <symbol or BSE code>`, `/remove <symbol>`, `/stop`.
+
 ## Deploy on the VPS
 
 ```bash

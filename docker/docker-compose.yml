@@ -29,6 +29,10 @@ services:
     <<: *app
     command: ["python", "-m", "app.worker"]
 
+  bot:
+    <<: *app
+    command: ["python", "-m", "app.bot"]
+
   caddy:
     image: caddy:2.8
     restart: unless-stopped

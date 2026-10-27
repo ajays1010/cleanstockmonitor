@@ -129,6 +129,22 @@ fieldset { border: 0; padding: 0; margin: 0; display: grid; grid-template-column
 legend { font-size: 0.875rem; margin-bottom: 8px; }
 .check { display: flex; align-items: center; gap: 8px; font-size: 0.875rem; }
 
+h2 { font-size: 1.125rem; margin: 0 0 12px; }
+#telegram { margin-bottom: 32px; }
+.chats { list-style: none; margin: 0 0 16px; padding: 0; }
+.chats li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.chats .actions { display: flex; gap: 16px; }
+.connect-steps .stack { flex-direction: row; flex-wrap: wrap; }
+code { font-size: 0.875em; }
+
 .empty { padding: 24px; border: 1px dashed var(--line); border-radius: 12px; text-align: center; }
 
 .notice {

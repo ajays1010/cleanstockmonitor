@@ -22,7 +22,6 @@ class Settings(BaseSettings):
 
     telegram_bot_token: SecretStr = SecretStr("")
     telegram_bot_username: str = ""
-    telegram_webhook_secret: SecretStr = SecretStr("")
     admin_telegram_chat_id: int | None = None
 
     fyers_app_id: str = ""

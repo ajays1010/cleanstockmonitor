@@ -1,4 +1,4 @@
-"""Signed-in pages. Telegram linking lands on the dashboard in the next step."""
+"""Home page and the signed-in dashboard (Telegram panel and watchlist)."""
 
 from typing import Annotated
 
@@ -7,8 +7,10 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.categories import CATEGORIES
 from app.core.profiles import Profile
+from app.core.telegram_links import TelegramLinkStore
 from app.core.watchlist import MAX_WATCHLIST, WatchlistStore
-from app.web.deps import get_watchlist, optional_user, require_user
+from app.web.deps import get_bot_username, get_telegram_links, get_watchlist, optional_user, require_user
+from app.web.routes.telegram import panel_context
 from app.web.templating import templates
 
 router = APIRouter()
@@ -26,6 +28,8 @@ def dashboard(
     request: Request,
     user: Annotated[Profile, Depends(require_user)],
     store: Annotated[WatchlistStore, Depends(get_watchlist)],
+    links: Annotated[TelegramLinkStore, Depends(get_telegram_links)],
+    bot: Annotated[str | None, Depends(get_bot_username)],
 ):
     return templates.TemplateResponse(
         request,
@@ -38,5 +42,6 @@ def dashboard(
             "message": None,
             "error": None,
             "error_item": None,
+            **panel_context(request, user, links, bot),
         },
     )

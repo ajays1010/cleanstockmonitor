@@ -1,15 +1,18 @@
 """Shared FastAPI dependencies. Tests replace these with app.dependency_overrides."""
 
+from collections.abc import Callable
 from functools import lru_cache
 from typing import Annotated
 from urllib.parse import quote
 
 from fastapi import Depends, HTTPException, Request
 
+from app.core import telegram
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.profiles import Profile, ProfileStore
 from app.core.supabase_auth import SupabaseAuth
+from app.core.telegram_links import TelegramLinkStore
 from app.core.watchlist import WatchlistStore
 
 SESSION_USER_KEY = "uid"
@@ -36,6 +39,22 @@ def get_profiles() -> ProfileStore:
 
 def get_watchlist() -> WatchlistStore:
     return WatchlistStore(get_db)
+
+
+def get_telegram_links() -> TelegramLinkStore:
+    return TelegramLinkStore(get_db)
+
+
+def get_bot_username() -> str | None:
+    """None when no bot token is configured yet."""
+    try:
+        return telegram.bot_username()
+    except telegram.TelegramError:
+        return None
+
+
+def get_sender() -> Callable[[int, str], telegram.SendResult]:
+    return telegram.send_message
 
 
 def require_htmx(request: Request) -> None:
