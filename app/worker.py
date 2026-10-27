@@ -1,4 +1,7 @@
-"""Worker entry point: runs every scheduled job. Start with `python -m app.worker`."""
+"""Worker entry point: runs every scheduled job. Start with `python -m app.worker`.
+
+Times are IST. Exactly one worker may run per database.
+"""
 
 import logging
 
@@ -7,6 +10,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.core.timeutil import IST
+from app.jobs import market
 from app.jobs.heartbeat import heartbeat
 
 log = logging.getLogger(__name__)
@@ -19,6 +23,18 @@ def build_scheduler() -> BlockingScheduler:
         job_defaults={"max_instances": 1, "coalesce": True, "misfire_grace_time": 60},
     )
     scheduler.add_job(heartbeat, "interval", minutes=5, id="heartbeat")
+    # Filings arrive from early morning to late evening, weekends included.
+    scheduler.add_job(market.poll_announcements, "cron", minute="*/3", hour="7-23", id="poll_announcements")
+    # The job itself checks trading days and the 09:15-15:40 window.
+    scheduler.add_job(
+        market.poll_prices, "cron", minute="*/5", hour="9-15", day_of_week="mon-fri", id="poll_prices"
+    )
+    scheduler.add_job(market.fan_out, "interval", seconds=30, id="fan_out")
+    scheduler.add_job(market.retry_failed, "interval", minutes=2, id="retry_failed")
+    scheduler.add_job(
+        market.daily_summary, "cron", hour=16, minute=0, day_of_week="mon-fri", id="daily_summary"
+    )
+    scheduler.add_job(market.cleanup, "cron", hour=2, minute=0, id="cleanup")
     return scheduler
 
 
