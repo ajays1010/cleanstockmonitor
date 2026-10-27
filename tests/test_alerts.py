@@ -96,18 +96,37 @@ def test_render_announcement_escapes_and_links_pdf():
     assert "27 Oct 2026, 13:50 IST" in text
 
 
-def test_render_price_spike():
+def test_render_price_spike_up():
     [event] = alerts.price_events("u1", SCRIP, settings(), quote("106"), TODAY)
+    assert alerts.render(event) == (
+        "📈 Price Alert: <b>Adani Power Ltd</b> (ADANIPOWER)\n"
+        "Price: ₹106.00 (🟢 +6.00%) vs prev close ₹100.00\n"
+        "Day (High–Low): ₹110.00 – ₹95.00"
+    )
+
+
+def test_render_price_spike_down_is_red():
+    [event] = alerts.price_events("u1", SCRIP, settings(), quote("94"), TODAY)
     text = alerts.render(event)
-    assert text.startswith("📈 <b>Adani Power Ltd</b> (ADANIPOWER) +6.00% at ₹106.00")
-    assert "Prev close ₹100.00" in text and "Day ₹95.00 – ₹110.00" in text
+    assert text.startswith("📉 Price Alert:")
+    assert "(🔴 −6.00%)" in text
 
 
 def test_render_price_level():
     [event] = alerts.price_events(
-        "u1", SCRIP, settings(spike=None, above="2,500".replace(",", "")), quote("2600", "2590"), TODAY
+        "u1", SCRIP, settings(spike=None, above="2500"), quote("2600", "2590"), TODAY
     )
-    assert "is above ₹2,500.00: now ₹2,600.00" in alerts.render(event)
+    text = alerts.render(event)
+    assert text.startswith("🔔 Price Alert: <b>Adani Power Ltd</b> (ADANIPOWER)\nCrossed above ₹2,500.00\n")
+    assert "Price: ₹2,600.00 (🟢 +0.39%) vs prev close ₹2,590.00" in text
+
+
+def test_change_badge():
+    from decimal import Decimal as D
+
+    assert alerts.change_badge(D("13.333")) == "🟢 +13.33%"
+    assert alerts.change_badge(D("-2.1")) == "🔴 −2.10%"
+    assert alerts.change_badge(D("0")) == "⚪ 0.00%"
 
 
 def test_summary_text():
@@ -123,5 +142,5 @@ def test_summary_text():
     ]
     text = alerts.summary_text(rows, {7: 2}, TODAY)
     assert "Close summary, 27 Oct 2026" in text
-    assert "ADANIPOWER: ₹188.65 (+1.13%) · 2 filings" in text
+    assert "ADANIPOWER: ₹188.65 (🟢 +1.13%) · 2 filings" in text
     assert "MANORAMA: no price today" in text

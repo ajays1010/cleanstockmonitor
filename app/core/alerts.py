@@ -135,6 +135,22 @@ def targets(
     return out
 
 
+def _change_pct(ltp, prev_close) -> Decimal | None:
+    if ltp is None or not prev_close or Decimal(str(prev_close)) == 0:
+        return None
+    prev = Decimal(str(prev_close))
+    return (Decimal(str(ltp)) - prev) / prev * 100
+
+
+def change_badge(change: Decimal) -> str:
+    """'🟢 +13.33%' when up, '🔴 −2.10%' when down (Telegram has no green arrow emoji)."""
+    if change > 0:
+        return f"🟢 +{change:.2f}%"
+    if change < 0:
+        return f"🔴 −{abs(change):.2f}%"
+    return "⚪ 0.00%"
+
+
 def _who(p: dict) -> str:
     tag = p.get("symbol") or f"BSE {p.get('bse_code')}"
     return f"<b>{esc(p.get('company'))}</b> ({esc(tag)})"
@@ -159,19 +175,20 @@ def render(event: dict) -> str:
         lines.append(f"🕒 {when:%d %b %Y, %H:%M} IST")
         return "\n".join(lines)
     if kind == "price_spike":
-        detail = []
-        if p.get("prev_close"):
-            detail.append(f"Prev close {_money(p['prev_close'])}")
-        if p.get("day_low") and p.get("day_high"):
-            detail.append(f"Day {_money(p['day_low'])} – {_money(p['day_high'])}")
+        change = _change_pct(p.get("ltp"), p.get("prev_close"))
         if p.get("rule") == "spike":
-            arrow = "📈" if p.get("direction") == "up" else "📉"
-            sign = "+" if p.get("direction") == "up" else ""
-            head = f"{arrow} {_who(p)} {sign}{Decimal(p['change_pct']):.2f}% at {_money(p['ltp'])}"
+            icon = "📈" if p.get("direction") == "up" else "📉"
+            lines = [f"{icon} Price Alert: {_who(p)}"]
         else:
             word = "above" if p.get("rule") == "above" else "below"
-            head = f"🔔 {_who(p)} is {word} {_money(p['level'])}: now {_money(p['ltp'])}"
-        return head + ("\n" + " · ".join(detail) if detail else "")
+            lines = [f"🔔 Price Alert: {_who(p)}", f"Crossed {word} {_money(p['level'])}"]
+        price = f"Price: {_money(p['ltp'])}"
+        if change is not None:
+            price += f" ({change_badge(change)}) vs prev close {_money(p['prev_close'])}"
+        lines.append(price)
+        if p.get("day_high") and p.get("day_low"):
+            lines.append(f"Day (High–Low): {_money(p['day_high'])} – {_money(p['day_low'])}")
+        return "\n".join(lines)
     if kind == "daily_summary":
         return p.get("text") or esc(event["title"])
     return esc(event["title"])
@@ -184,9 +201,7 @@ def summary_text(rows: list[dict], announcement_counts: dict[int, int], today: d
         q = r.get("quote")
         tag = r.get("nse_symbol") or f"BSE {r['bse_code']}"
         if q and q.get("prev_close"):
-            ltp, prev = Decimal(str(q["ltp"])), Decimal(str(q["prev_close"]))
-            change = (ltp - prev) / prev * 100
-            price = f"{_money(ltp)} ({'+' if change >= 0 else ''}{change:.2f}%)"
+            price = f"{_money(q['ltp'])} ({change_badge(_change_pct(q['ltp'], q['prev_close']))})"
         elif q:
             price = _money(q["ltp"])
         else:
