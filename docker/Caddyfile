@@ -1,0 +1,12 @@
+# Caddy gets and renews the HTTPS certificate for this domain automatically.
+# If navservice moves behind this Caddy too, add its block here, for example:
+#   navservice.example.com {
+#       reverse_proxy host.docker.internal:8000
+#   }
+# If the VPS already runs nginx on ports 80/443, drop the caddy service and proxy
+# nginx to the web container instead.
+
+{$STOCKMONITOR_DOMAIN} {
+	encode gzip
+	reverse_proxy web:8001
+}

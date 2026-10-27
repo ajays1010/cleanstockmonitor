@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>BSE alerts on Telegram</h1>
+  <p>Announcements, price moves and a daily summary for the stocks you watch, within 5 minutes and never twice.</p>
+  {% if not user %}
+    <p><a class="button" href="/login">Sign in to get started</a></p>
+  {% endif %}
+{% endblock %}

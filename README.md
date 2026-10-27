@@ -1,105 +1,44 @@
-# BSE Stock Monitor - Production Release
+# StockMonitor
 
-A comprehensive stock market monitoring and notification system for BSE (Bombay Stock Exchange) with multi-user Telegram support.
+BSE announcements, price-spike alerts and a daily summary for the stocks you watch, delivered to Telegram within 5 minutes and never twice.
 
-## Features
+This is the phase-1 rebuild. The previous Flask app is kept in `legacy/` for reference only and will be deleted once phase 1 is live.
 
-✅ **Multi-User Telegram Notifications** - Multiple users can share chat IDs with personalized names  
-✅ **Real-time Stock Monitoring** - Live price alerts and BSE announcements  
-✅ **AI-Powered Analysis** - Intelligent PDF processing and sentiment analysis  
-✅ **Automated Cron Jobs** - Scheduled monitoring during market hours  
-✅ **Admin Dashboard** - Complete user and system management  
-✅ **Firebase Authentication** - Secure user login with Google/Phone  
-✅ **Supabase Database** - Reliable cloud database backend  
+## How it fits together
 
-## Quick Setup
+- **worker** (`app/worker.py`): runs every scheduled job. Pollers fetch each source once for all users and store new items in `events`; fan-out creates one `deliveries` row per subscribed chat (unique per event and chat) and only then sends to Telegram.
+- **web** (`app/web/main.py`): FastAPI app for login, watchlist and admin. It only reads and writes the database.
+- **Supabase**: Postgres and Auth. Only the backend connects, with the service key.
 
-### 1. Environment Configuration
+## Local setup
+
 ```bash
-cp .env.example .env
-# Edit .env with your actual API keys and configuration
+python -m venv .venv
+.venv/Scripts/activate        # Windows; use .venv/bin/activate on Linux
+pip install -e ".[dev]"
+cp .env.example .env          # fill in the values
+uvicorn app.web.main:app --reload --port 8001
+python -m app.worker          # in a second terminal
+pytest
 ```
 
-### 2. Install Dependencies
+## Database
+
+Migrations live in `supabase/migrations` and run in file order:
+
+1. `0001_schema.sql`: tables, indexes, row-level security, default settings.
+2. `0002_seed_scrips.sql`: about 4,600 scrips, generated from `data/indian_stock_tickers.csv` by `python scripts/build_scrip_seed.py`.
+3. `0003_auth_trigger.sql`: creates a `profiles` row when a user signs up.
+
+Apply them with the Supabase CLI (`supabase link`, then `supabase db push`), or paste each file into the SQL editor in order.
+
+## Deploy on the VPS
+
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/ajays1010/cleanstockmonitor.git /opt/stockmonitor
+cd /opt/stockmonitor
+cp .env.example .env && chmod 600 .env   # fill in; APP_ENV=production, STOCKMONITOR_DOMAIN=<your domain>
+docker compose -f docker/docker-compose.yml up -d --build
 ```
 
-### 3. Run Application
-```bash
-python app.py
-```
-
-### 4. Deploy to Production
-The application is configured for deployment on Render.com using the included `render.yaml` configuration.
-
-## Essential Environment Variables
-
-```env
-FIREBASE_SERVICE_ACCOUNT_JSON={"type": "service_account", ...}
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_KEY=your-supabase-service-role-key
-TELEGRAM_BOT_TOKEN=123456789:your-telegram-bot-token
-CRON_SECRET_KEY=your-secret-cron-key
-```
-
-## Key Endpoints
-
-- `/` - Main user dashboard
-- `/admin/` - Admin panel
-- `/cron/master` - Unified cron controller
-- `/health` - Health check endpoint
-
-## Multi-User Telegram Enhancement
-
-This system now supports multiple Telegram users with the following capabilities:
-
-- **Shared Chat IDs**: Multiple users can use the same Telegram chat with different names
-- **Personalized Messages**: Each notification includes the user's specified name
-- **Enhanced UI**: User-friendly forms for adding recipients with names
-
-### Example Usage:
-- **John Smith** → Chat ID: `123456789`  
-- **Trading Team** → Chat ID: `123456789` (same chat, different name)  
-- **Family Group** → Chat ID: `123456789` (same chat, different name)  
-
-### Message Format:
-```
-👤 John Smith
-────────────────────
-📊 Stock Alert: RELIANCE crossed ₹2,500!
-```
-
-## Database Schema
-
-The system uses PostgreSQL via Supabase with the following key tables:
-- `profiles` - User accounts and authentication
-- `monitored_scrips` - User's tracked stocks
-- `telegram_recipients` - Multi-user telegram recipients with names
-- `bse_announcements` - BSE announcement data
-- `cron_run_logs` - System monitoring logs
-
-## Production Deployment
-
-This folder contains only production-ready files:
-- No test scripts or development artifacts
-- Clean environment configuration
-- Optimized for cloud deployment
-- Ready for GitHub → Render auto-deployment
-
-## Security Features
-
-- Firebase Admin SDK for secure authentication
-- Cron endpoint protection with secret keys
-- Environment variable configuration
-- Service role separation for admin functions
-
-## Support
-
-For technical issues or feature requests, refer to the main project documentation or contact the development team.
-
----
-
-**Version**: Production Release  
-**Last Updated**: Multi-user Telegram Enhancement Complete  
-**Deployment**: Render.com via GitHub Auto-Deploy
+Point the domain's DNS A record at the VPS first; Caddy then gets the HTTPS certificate on its own. Automatic deploys from GitHub Actions come later in phase 1.
