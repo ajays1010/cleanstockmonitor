@@ -8,6 +8,8 @@ Announcement records as BSE's, so the rest of the app does not care which it is.
 """
 
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 
 import httpx
@@ -70,14 +72,15 @@ def parse_rows(rows: list[dict], bse_code: str) -> list[Announcement]:
     return out
 
 
-def client() -> httpx.Client:
-    """An HTTP client with NSE's cookies, which some of its edges insist on."""
-    http = httpx.Client(timeout=30, headers=HEADERS, follow_redirects=True)
-    try:
-        http.get(HOME_URL)
-    except httpx.HTTPError as exc:
-        log.warning("NSE home page: %s", exc)
-    return http
+@contextmanager
+def client(**kwargs) -> Iterator[httpx.Client]:
+    """An HTTP client holding NSE's cookies, which some of its edges insist on."""
+    with httpx.Client(timeout=30, headers=HEADERS, follow_redirects=True, **kwargs) as http:
+        try:
+            http.get(HOME_URL)
+        except httpx.HTTPError as exc:
+            log.warning("NSE home page: %s", exc)
+        yield http
 
 
 def fetch_announcements(

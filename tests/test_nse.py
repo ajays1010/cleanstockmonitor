@@ -79,6 +79,18 @@ def test_fetch_announcements_params_and_errors():
         raise AssertionError("expected NseError")
 
 
+def test_client_visits_home_page_then_queries():
+    paths = []
+
+    def handler(req):
+        paths.append(req.url.path)
+        return httpx.Response(200, json=[])
+
+    with nse.client(transport=httpx.MockTransport(handler)) as http:
+        assert nse.fetch_announcements("ACUTAAS", "543349", http) == []
+    assert paths == ["/companies-listing/corporate-filings-announcements", "/api/corporate-announcements"]
+
+
 def test_sme_detection():
     assert nse.is_sme("NSE:RAVITA-ST") and nse.is_sme("NSE:ABC-SM")
     assert not nse.is_sme("NSE:ACUTAAS-EQ") and not nse.is_sme(None)
