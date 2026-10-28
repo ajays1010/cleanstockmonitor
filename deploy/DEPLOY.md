@@ -28,9 +28,9 @@ journalctl -u stockmonitor-worker -f
 ## First install (already done)
 
 ```bash
-useradd --system --create-home --home-dir /opt/stockmonitor --shell /usr/sbin/nologin stockmonitor
-sudo -u stockmonitor git clone -b rebuild/phase1 https://github.com/ajays1010/cleanstockmonitor.git /opt/stockmonitor/src
-# (contents moved to /opt/stockmonitor)
+git clone -b rebuild/phase1 https://github.com/ajays1010/cleanstockmonitor.git /opt/stockmonitor
+useradd --system --no-create-home --home-dir /opt/stockmonitor --shell /usr/sbin/nologin stockmonitor
+chown -R stockmonitor:stockmonitor /opt/stockmonitor
 sudo -u stockmonitor python3 -m venv /opt/stockmonitor/.venv
 sudo -u stockmonitor /opt/stockmonitor/.venv/bin/pip install /opt/stockmonitor
 # .env: copy from a dev machine, then set APP_ENV=production and
