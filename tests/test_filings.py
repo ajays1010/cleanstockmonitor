@@ -148,8 +148,9 @@ def test_unknown_tone_is_neutral_and_points_capped():
 
 
 def test_control_characters_are_stripped():
-    data = gemini_reply({"points": ["PAT up to \x08₹7,019 Cr\nnet"], "tone": "positive"}).json()
-    assert gemini.parse_response(data).points == ("PAT up to ₹7,019 Cr net",)
+    points = ["PAT up to \x08₹7,019 Cr\nnet", "PAT \\u20b916,333 Cr"]
+    data = gemini_reply({"points": points, "tone": "positive"})
+    assert gemini.parse_response(data.json()).points == ("PAT up to ₹7,019 Cr net", "PAT ₹16,333 Cr")
 
 
 # ---- Telegram documents

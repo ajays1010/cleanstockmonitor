@@ -29,10 +29,15 @@ PROMPT = """You are summarising a stock-exchange filing by {company}, an Indian 
 for a shareholder who will read it on a phone.
 Filing headline: {headline}
 
-Give 2 to 4 short points (each under 120 characters) with the facts that matter to a \
+Give 2 to 4 short points (each under 140 characters) with the facts that matter to a \
 shareholder, taken only from this document:
-- Financial results: revenue, EBITDA or operating profit, net profit (PAT), each with the \
-year-on-year change where given; exceptional items; any dividend declared.
+- Financial results: revenue, EBITDA or operating profit, and net profit (PAT), each with \
+its change against the same quarter last year (YoY) and against the previous quarter (QoQ), \
+written like "Revenue ₹19,951 Cr (YoY +39%, QoQ +12%)". Results statements show both \
+comparison quarters as columns; work out the percentage from them when it is not stated, \
+and leave out a comparison the document does not support. Prefer consolidated figures when \
+both standalone and consolidated are given. Also mention exceptional or one-time items and \
+any dividend declared.
 - Orders and contracts: client, order value and timeline; compare with annual revenue only \
 if the document states it.
 - Board meetings: the date and purpose, or the decisions taken.
@@ -72,8 +77,10 @@ def configured() -> bool:
 
 
 def _clean(point) -> str:
-    """One line of plain text; Gemini sometimes puts stray control characters (e.g. \\x08) before ₹."""
-    return " ".join(re.sub(r"[\x00-\x1f\x7f]", " ", str(point)).split())
+    """One line of plain text. Gemini sometimes writes ₹ as a literal "\\u20b9" or puts a
+    stray control character (e.g. \\x08) before it."""
+    text = re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), str(point))
+    return " ".join(re.sub(r"[\x00-\x1f\x7f]", " ", text).split())
 
 
 def parse_response(data: dict) -> Summary:
