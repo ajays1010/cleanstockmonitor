@@ -1,6 +1,7 @@
 """Settings read from environment variables (or a .env file in development)."""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -33,6 +34,12 @@ class Settings(BaseSettings):
     # Optional: AI summaries of important filings (aistudio.google.com).
     gemini_api_key: SecretStr = SecretStr("")
     gemini_model: str = "gemini-2.5-flash"
+
+    # Who reads BSE. "here": this worker polls it. "remote": BSE blocks this server, so the
+    # fetcher app (app/fetcher.py, on Render) polls it and this worker only watches that it runs.
+    bse_fetch: Literal["here", "remote"] = "here"
+    # The fetcher only: shared secret its scheduler sends in the X-Fetcher-Key header.
+    fetcher_secret: SecretStr = SecretStr("")
 
     @property
     def is_production(self) -> bool:

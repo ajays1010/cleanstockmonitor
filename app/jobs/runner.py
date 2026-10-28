@@ -13,6 +13,22 @@ log = logging.getLogger(__name__)
 JobFn = Callable[[], dict[str, Any] | None]
 
 
+def last_success(name: str) -> datetime | None:
+    """When the latest successful run of a job started."""
+    rows = (
+        get_db()
+        .table("job_runs")
+        .select("started_at")
+        .eq("job", name)
+        .eq("ok", True)
+        .order("started_at", desc=True)
+        .limit(1)
+        .execute()
+        .data
+    )
+    return datetime.fromisoformat(rows[0]["started_at"]) if rows else None
+
+
 def tracked(name: str) -> Callable[[JobFn], Callable[[], None]]:
     """Record start, finish, stats and any error of a job in job_runs.
 

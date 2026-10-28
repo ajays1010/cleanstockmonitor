@@ -14,6 +14,7 @@ from app.jobs import market
 from app.jobs.fyers_refresh import refresh_fyers_token
 from app.jobs.heartbeat import heartbeat
 from app.jobs.scrips import sync_scrips
+from app.jobs.watchdog import bse_watchdog
 
 log = logging.getLogger(__name__)
 
@@ -25,8 +26,16 @@ def build_scheduler() -> BlockingScheduler:
         job_defaults={"max_instances": 1, "coalesce": True, "misfire_grace_time": 60},
     )
     scheduler.add_job(heartbeat, "interval", minutes=5, id="heartbeat")
-    # Filings arrive from early morning to late evening, weekends included.
-    scheduler.add_job(market.poll_announcements, "cron", minute="*/3", hour="7-23", id="poll_announcements")
+    if get_settings().bse_fetch == "remote":
+        # BSE blocks this server: the fetcher on Render reads it, and this checks on it.
+        scheduler.add_job(bse_watchdog, "interval", minutes=5, id="bse_watchdog")
+    else:
+        # Filings arrive from early morning to late evening, weekends included.
+        scheduler.add_job(
+            market.poll_announcements, "cron", minute="*/3", hour="7-23", id="poll_announcements"
+        )
+        # New listings appear in the exchange lists the evening before or the morning of listing.
+        scheduler.add_job(sync_scrips, "cron", hour="6,20", minute=30, id="sync_scrips")
     # The job itself checks trading days and the 09:15-15:40 window.
     scheduler.add_job(
         market.poll_prices, "cron", minute="*/5", hour="9-15", day_of_week="mon-fri", id="poll_prices"
@@ -37,8 +46,6 @@ def build_scheduler() -> BlockingScheduler:
         market.daily_summary, "cron", hour=16, minute=0, day_of_week="mon-fri", id="daily_summary"
     )
     scheduler.add_job(market.cleanup, "cron", hour=2, minute=0, id="cleanup")
-    # New listings appear in the exchange lists the evening before or the morning of listing.
-    scheduler.add_job(sync_scrips, "cron", hour="6,20", minute=30, id="sync_scrips")
     # Fyers access tokens expire at 06:30 IST; mint a fresh one before the market opens.
     scheduler.add_job(refresh_fyers_token, "cron", hour=6, minute=45, id="refresh_fyers_token")
     return scheduler
