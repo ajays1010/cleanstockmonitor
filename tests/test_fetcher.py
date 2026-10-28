@@ -9,6 +9,7 @@ from pydantic import SecretStr
 from app import fetcher, worker
 from app.core.timeutil import IST
 from app.jobs import watchdog
+from app.jobs.scrips import sync_due
 
 
 def ist(day, hour, minute=0):
@@ -56,10 +57,10 @@ def test_run_jobs_hours_and_sync_slots(calls, monkeypatch):
 
 
 def test_sync_due():
-    assert fetcher.sync_due(ist(28, 6, 29), ist(27, 20, 31)) is False
-    assert fetcher.sync_due(ist(28, 6, 31), ist(27, 20, 31)) is True
-    assert fetcher.sync_due(ist(28, 2), ist(27, 6, 40)) is True  # missed the 20:30 slot
-    assert fetcher.sync_due(ist(28, 12), None) is True
+    assert sync_due(ist(28, 6, 29), ist(27, 20, 31)) is False
+    assert sync_due(ist(28, 6, 31), ist(27, 20, 31)) is True
+    assert sync_due(ist(28, 2), ist(27, 6, 40)) is True  # missed the 20:30 slot
+    assert sync_due(ist(28, 12), None) is True
 
 
 def test_overlapping_runs_are_skipped(calls):

@@ -7,11 +7,12 @@ list are marked inactive (hidden from search; existing watchlist rows keep worki
 
 import logging
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
 
 import httpx
 
 from app.core.db import get_db
+from app.core.timeutil import IST
 from app.jobs.runner import tracked
 from app.sources.fyers import fetch_symbol_master
 from app.sources.scrip_master import ScripRow, fetch_all
@@ -19,6 +20,8 @@ from app.sources.scrip_master import ScripRow, fetch_all
 log = logging.getLogger(__name__)
 
 BATCH = 500
+# New listings appear in the exchange lists the evening before or the morning of listing.
+SYNC_SLOTS = (time(6, 30), time(20, 30))  # IST
 
 
 def with_fyers_symbols(rows: list[ScripRow], nse: dict[str, str], bse: dict[str, str]) -> list[ScripRow]:
@@ -28,10 +31,22 @@ def with_fyers_symbols(rows: list[ScripRow], nse: dict[str, str], bse: dict[str,
     ]
 
 
+def sync_due(now: datetime, last: datetime | None) -> bool:
+    """True when a sync slot (06:30 or 20:30 IST) has passed since the last successful sync."""
+    slots = [
+        datetime.combine(now.date() - timedelta(days=d), slot, tzinfo=IST)
+        for d in (0, 1)
+        for slot in SYNC_SLOTS
+    ]
+    latest = max(s for s in slots if s <= now)
+    return last is None or last < latest
+
+
 @tracked("sync_scrips")
-def sync_scrips() -> dict:
+def sync_scrips(bse_rows: list[dict] | None = None) -> dict:
+    """bse_rows: BSE's scrip list when it was fetched elsewhere (the home relay)."""
     with httpx.Client() as http:
-        rows = fetch_all(http)
+        rows = fetch_all(http, bse_rows)
         try:
             rows = with_fyers_symbols(rows, *fetch_symbol_master(http))
         except httpx.HTTPError as exc:  # keep the exchange data; Fyers symbols stay as derived

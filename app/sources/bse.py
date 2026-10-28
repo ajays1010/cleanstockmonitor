@@ -107,10 +107,10 @@ def parse_rows(rows: list[dict]) -> list[Announcement]:
     return out
 
 
-def fetch_announcements(bse_code: str, client: httpx.Client, days: int = 2) -> list[Announcement]:
-    """Announcements for one scrip over the last `days` days (today included)."""
+def announcement_params(bse_code: str, days: int = 2) -> dict:
+    """Query for one scrip's announcements over the last `days` days (today included)."""
     today = now_ist().date()
-    params = {
+    return {
         "pageno": 1,
         "strCat": "-1",
         "strPrevDate": (today - timedelta(days=days - 1)).strftime("%Y%m%d"),
@@ -120,8 +120,12 @@ def fetch_announcements(bse_code: str, client: httpx.Client, days: int = 2) -> l
         "strType": "C",
         "subcategory": "-1",
     }
+
+
+def fetch_announcements(bse_code: str, client: httpx.Client, days: int = 2) -> list[Announcement]:
+    """Announcements for one scrip over the last `days` days (today included)."""
     try:
-        resp = client.get(API_URL, params=params, headers=HEADERS, timeout=30)
+        resp = client.get(API_URL, params=announcement_params(bse_code, days), headers=HEADERS, timeout=30)
     except httpx.HTTPError as exc:
         raise BseError(f"{type(exc).__name__}: {exc}") from exc
     if resp.status_code != 200:

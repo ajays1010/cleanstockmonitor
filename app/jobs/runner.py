@@ -10,7 +10,7 @@ from app.core.db import get_db
 
 log = logging.getLogger(__name__)
 
-JobFn = Callable[[], dict[str, Any] | None]
+JobFn = Callable[..., dict[str, Any] | None]
 
 
 def last_success(name: str) -> datetime | None:
@@ -29,16 +29,16 @@ def last_success(name: str) -> datetime | None:
     return datetime.fromisoformat(rows[0]["started_at"]) if rows else None
 
 
-def tracked(name: str) -> Callable[[JobFn], Callable[[], None]]:
+def tracked(name: str) -> Callable[[JobFn], Callable[..., None]]:
     """Record start, finish, stats and any error of a job in job_runs.
 
     The job returns a dict of counts (stored as stats) or None. Exceptions are logged
     and recorded, never raised, so one failing run does not stop the scheduler.
     """
 
-    def decorator(fn: JobFn) -> Callable[[], None]:
+    def decorator(fn: JobFn) -> Callable[..., None]:
         @functools.wraps(fn)
-        def wrapper() -> None:
+        def wrapper(*args, **kwargs) -> None:
             db = get_db()
             run_id = None
             try:
@@ -49,7 +49,7 @@ def tracked(name: str) -> Callable[[JobFn], Callable[[], None]]:
 
             ok, stats, error = True, {}, None
             try:
-                stats = fn() or {}
+                stats = fn(*args, **kwargs) or {}
             except Exception as exc:
                 ok, error = False, f"{type(exc).__name__}: {exc}"
                 log.exception("Job %s failed", name)

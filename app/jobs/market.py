@@ -18,11 +18,12 @@ from app.core.quote_source import fetch_quotes, snapshot_row
 from app.core.timeutil import IST, MARKET_OPEN, now_ist
 from app.jobs.runner import tracked
 from app.sources import nse
-from app.sources.bse import BseError, fetch_announcements
+from app.sources.bse import BseError, fetch_announcements, parse_rows
 
 log = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 5
+ANNOUNCEMENT_HOURS = range(7, 24)  # IST; filings arrive from early morning to late evening
 PRICE_WINDOW_END = (15, 40)  # keep polling a little past 15:30 to catch the closing price
 # Telegram errors that will not fix themselves; stop retrying those deliveries.
 PERMANENT_ERRORS = ("blocked by the user", "chat not found", "kicked", "deactivated", "not enough rights")
@@ -39,6 +40,10 @@ def _watchlist() -> list[dict]:
 
 def _distinct_scrips(rows: list[dict]) -> dict[int, dict]:
     return {r["scrips"]["id"]: r["scrips"] for r in rows}
+
+
+def watched_bse_codes() -> list[str]:
+    return sorted({s["bse_code"] for s in _distinct_scrips(_watchlist()).values()})
 
 
 def _insert_events(events: list[dict]) -> int:
@@ -59,22 +64,54 @@ def _holidays() -> set[date]:
     return {date.fromisoformat(d) for d in (rows[0]["value"] if rows else [])}
 
 
+def _store_bse(
+    scrips: dict[int, dict], fetched: dict[str, list], errors: int, baseline: bool = False
+) -> dict:
+    """Save BSE announcements fetched per BSE code. A baseline run records them as already
+    sent: used when switching back to BSE, so filings that went out from NSE are not repeated."""
+    if errors and not fetched:
+        raise RuntimeError(f"BSE failed for all {errors} scrips")
+    events = [
+        alerts.announcement_event(a, s["id"], s.get("nse_symbol"))
+        for s in scrips.values()
+        for a in fetched.get(s["bse_code"], [])
+    ]
+    if baseline:
+        stamp = datetime.now(UTC).isoformat()
+        for e in events:
+            e["fanned_out_at"] = stamp
+    stats = {
+        "scrips": len(fetched) + errors,
+        "fetched": len(events),
+        "new": _insert_events(events),
+        "errors": errors,
+    }
+    return {**stats, "baseline": True} if baseline else stats
+
+
 @tracked("poll_announcements")
 def poll_announcements() -> dict:
     scrips = _distinct_scrips(_watchlist())
-    events, errors = [], 0
+    fetched, errors = {}, 0
     with httpx.Client() as http:
         for scrip in scrips.values():
             try:
-                for a in fetch_announcements(scrip["bse_code"], http):
-                    events.append(alerts.announcement_event(a, scrip["id"], scrip.get("nse_symbol")))
+                fetched[scrip["bse_code"]] = fetch_announcements(scrip["bse_code"], http)
             except BseError as exc:
                 errors += 1
                 log.warning("BSE %s: %s", scrip["bse_code"], exc)
             time.sleep(0.3)  # be gentle with BSE
-    if errors and errors == len(scrips):
-        raise RuntimeError(f"BSE failed for all {errors} scrips")
-    return {"scrips": len(scrips), "fetched": len(events), "new": _insert_events(events), "errors": errors}
+    return _store_bse(scrips, fetched, errors)
+
+
+@tracked("poll_announcements")
+def store_relayed_announcements(results: dict[str, list[dict] | None], baseline: bool = False) -> dict:
+    """Announcements the home relay fetched from BSE: raw rows per BSE code, or None where
+    BSE failed. Recorded as poll_announcements so the watchdog and admin page see them."""
+    scrips = _distinct_scrips(_watchlist())
+    fetched = {code: parse_rows(rows) for code, rows in results.items() if rows is not None}
+    errors = sum(1 for rows in results.values() if rows is None)
+    return _store_bse(scrips, fetched, errors, baseline)
 
 
 def _has_events(source: str) -> bool:

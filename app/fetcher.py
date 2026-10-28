@@ -15,37 +15,23 @@ Start: uvicorn app.fetcher:app --host 0.0.0.0 --port $PORT
 import logging
 import secrets
 import threading
-from datetime import datetime, time, timedelta
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
 
 from app.core.config import get_settings
 from app.core.logging import setup_logging
-from app.core.timeutil import IST, now_ist
-from app.jobs.market import poll_announcements
+from app.core.timeutil import now_ist
+from app.jobs.market import ANNOUNCEMENT_HOURS, poll_announcements
 from app.jobs.runner import last_success
-from app.jobs.scrips import sync_scrips
+from app.jobs.scrips import sync_due, sync_scrips
 
 log = logging.getLogger(__name__)
-
-ANNOUNCEMENT_HOURS = range(7, 24)  # IST; filings arrive from early morning to late evening
-SCRIP_SYNC_SLOTS = (time(6, 30), time(20, 30))  # IST
 
 setup_logging()
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 _running = threading.Lock()
-
-
-def sync_due(now: datetime, last: datetime | None) -> bool:
-    """True when a sync slot has passed since the last successful scrip sync."""
-    slots = [
-        datetime.combine(now.date() - timedelta(days=d), slot, tzinfo=IST)
-        for d in (0, 1)
-        for slot in SCRIP_SYNC_SLOTS
-    ]
-    latest = max(s for s in slots if s <= now)
-    return last is None or last < latest
 
 
 def run_jobs(now: datetime) -> None:

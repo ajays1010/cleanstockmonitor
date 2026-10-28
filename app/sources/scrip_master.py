@@ -91,18 +91,14 @@ def merge(bse_rows: list[dict], nse: dict[str, NseListing]) -> list[ScripRow]:
     return out
 
 
-def fetch_all(client: httpx.Client) -> list[ScripRow]:
-    try:
-        bse = client.get(
-            BSE_LIST,
-            params={"Group": "", "Scripcode": "", "industry": "", "segment": "Equity", "status": "Active"},
-            headers=BSE_HEADERS,
-            timeout=90,
-        )
-        bse.raise_for_status()
-        bse_rows = bse.json()
-    except (httpx.HTTPError, ValueError) as exc:
-        raise ScripListError(f"BSE scrip list: {exc}") from exc
+BSE_LIST_PARAMS = {"Group": "", "Scripcode": "", "industry": "", "segment": "Equity", "status": "Active"}
+
+
+def fetch_all(client: httpx.Client, bse_rows: list[dict] | None = None) -> list[ScripRow]:
+    """All active BSE scrips merged with NSE's lists. bse_rows, when given, is BSE's list
+    already fetched elsewhere (the home relay); BSE refuses this server."""
+    if bse_rows is None:
+        bse_rows = _fetch_bse_list(client)
     if not isinstance(bse_rows, list) or len(bse_rows) < 1000:
         raise ScripListError(f"BSE scrip list looks wrong ({type(bse_rows).__name__}, {len(bse_rows)} rows)")
 
@@ -115,3 +111,12 @@ def fetch_all(client: httpx.Client) -> list[ScripRow]:
         except httpx.HTTPError as exc:
             raise ScripListError(f"NSE list {url}: {exc}") from exc
     return merge(bse_rows, nse)
+
+
+def _fetch_bse_list(client: httpx.Client) -> list[dict]:
+    try:
+        bse = client.get(BSE_LIST, params=BSE_LIST_PARAMS, headers=BSE_HEADERS, timeout=90)
+        bse.raise_for_status()
+        return bse.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise ScripListError(f"BSE scrip list: {exc}") from exc
