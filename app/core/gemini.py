@@ -37,7 +37,8 @@ written like "Revenue ₹19,951 Cr (YoY +39%, QoQ +12%)". Results statements sho
 comparison quarters as columns; work out the percentage from them when it is not stated, \
 and leave out a comparison the document does not support. Prefer consolidated figures when \
 both standalone and consolidated are given. Also mention exceptional or one-time items and \
-any dividend declared.
+any dividend declared. Name quarters by the Indian April-March financial year: the quarter \
+ended 30 Sep 2026 is Q2 FY27, 31 Dec 2026 is Q3 FY27, 31 Mar 2027 is Q4 FY27.
 - Orders and contracts: client, order value and timeline; compare with annual revenue only \
 if the document states it.
 - Board meetings: the date and purpose, or the decisions taken.
