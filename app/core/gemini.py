@@ -7,6 +7,7 @@ categories in SUMMARY_CATEGORIES are summarised; routine filings are not worth t
 import base64
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass
 
@@ -70,6 +71,11 @@ def configured() -> bool:
     return bool(get_settings().gemini_api_key.get_secret_value())
 
 
+def _clean(point) -> str:
+    """One line of plain text; Gemini sometimes puts stray control characters (e.g. \\x08) before ₹."""
+    return " ".join(re.sub(r"[\x00-\x1f\x7f]", " ", str(point)).split())
+
+
 def parse_response(data: dict) -> Summary:
     try:
         parts = data["candidates"][0]["content"]["parts"]
@@ -78,7 +84,7 @@ def parse_response(data: dict) -> Summary:
     except (KeyError, IndexError, TypeError, ValueError) as exc:
         reason = (data.get("promptFeedback") or {}).get("blockReason") or type(exc).__name__
         raise GeminiError(f"Unusable Gemini response: {reason}") from exc
-    points = tuple(" ".join(str(p).split())[:200] for p in result.get("points") or [] if str(p).strip())
+    points = tuple(t[:200] for t in map(_clean, result.get("points") or []) if t)
     if not points:
         raise GeminiError("Gemini returned no points")
     tone = result.get("tone") if result.get("tone") in TONES else "neutral"

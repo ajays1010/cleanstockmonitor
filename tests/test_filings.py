@@ -147,6 +147,11 @@ def test_unknown_tone_is_neutral_and_points_capped():
     assert s.tone == "neutral" and len(s.points) == gemini.MAX_POINTS
 
 
+def test_control_characters_are_stripped():
+    data = gemini_reply({"points": ["PAT up to \x08₹7,019 Cr\nnet"], "tone": "positive"}).json()
+    assert gemini.parse_response(data).points == ("PAT up to ₹7,019 Cr net",)
+
+
 # ---- Telegram documents
 
 
