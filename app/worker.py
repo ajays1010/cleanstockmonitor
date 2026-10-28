@@ -26,14 +26,20 @@ def build_scheduler() -> BlockingScheduler:
         job_defaults={"max_instances": 1, "coalesce": True, "misfire_grace_time": 60},
     )
     scheduler.add_job(heartbeat, "interval", minutes=5, id="heartbeat")
-    if get_settings().bse_fetch == "remote":
-        # BSE blocks this server: the fetcher on Render reads it, and this checks on it.
+    settings = get_settings()
+    # Filings arrive from early morning to late evening, weekends included.
+    if settings.announcement_source == "nse":
+        scheduler.add_job(
+            market.poll_nse_announcements, "cron", minute="*/3", hour="7-23", id="poll_nse_announcements"
+        )
+    if settings.bse_fetch == "remote":
+        # BSE blocks this server: a fetcher elsewhere reads it, and this checks on it.
         scheduler.add_job(bse_watchdog, "interval", minutes=5, id="bse_watchdog")
     else:
-        # Filings arrive from early morning to late evening, weekends included.
-        scheduler.add_job(
-            market.poll_announcements, "cron", minute="*/3", hour="7-23", id="poll_announcements"
-        )
+        if settings.announcement_source == "bse":
+            scheduler.add_job(
+                market.poll_announcements, "cron", minute="*/3", hour="7-23", id="poll_announcements"
+            )
         # New listings appear in the exchange lists the evening before or the morning of listing.
         scheduler.add_job(sync_scrips, "cron", hour="6,20", minute=30, id="sync_scrips")
     # The job itself checks trading days and the 09:15-15:40 window.

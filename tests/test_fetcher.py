@@ -73,43 +73,51 @@ def test_overlapping_runs_are_skipped(calls):
 
 def test_checks():
     now = ist(28, 12)
-    fresh, scrips_ok = now - timedelta(minutes=4), now - timedelta(hours=5)
+    fresh, scrips_ok = now - timedelta(minutes=4), now - timedelta(hours=30)
     assert watchdog.checks(now, fresh, scrips_ok) == {"announcements": None, "scrips": None}
-    found = watchdog.checks(now, now - timedelta(minutes=20), now - timedelta(hours=30))
-    assert "11:40 IST" in found["announcements"] and "scrip list" in found["scrips"]
+    found = watchdog.checks(now, now - timedelta(minutes=20), now - timedelta(days=4), source="NSE")
+    assert "NSE announcement check since 28 Oct 11:40 IST" in found["announcements"]
+    assert "scrip list" in found["scrips"]
     assert "yet" in watchdog.checks(now, None, scrips_ok)["announcements"]
     # Overnight, announcements are not judged at all.
     assert "announcements" not in watchdog.checks(ist(28, 3), None, scrips_ok)
 
 
-def test_watchdog_warns_once_then_reports_recovery(monkeypatch):
+@pytest.mark.parametrize(
+    ("source", "job"), [("bse", "poll_announcements"), ("nse", "poll_nse_announcements")]
+)
+def test_watchdog_warns_once_then_reports_recovery(monkeypatch, source, job):
     sent = []
-    last = {"poll_announcements": None, "sync_scrips": ist(28, 6, 30)}
+    last = {job: None, "sync_scrips": ist(28, 6, 30)}
     monkeypatch.setattr(watchdog, "notify_admins", sent.append)
-    monkeypatch.setattr(watchdog, "last_success", lambda job: last[job])
+    monkeypatch.setattr(watchdog, "last_success", lambda name: last.get(name))
     monkeypatch.setattr(watchdog, "now_ist", lambda: ist(28, 12))
+    monkeypatch.setattr(watchdog, "get_settings", lambda: SimpleNamespace(announcement_source=source))
     monkeypatch.setattr(watchdog, "_warned", set())
     monkeypatch.setattr("app.jobs.runner.get_db", MagicMock)  # job_runs bookkeeping
 
     watchdog.bse_watchdog()
     watchdog.bse_watchdog()
-    assert len(sent) == 1 and sent[0].startswith("⚠️ BSE fetcher")
-    last["poll_announcements"] = ist(28, 11, 58)
+    assert len(sent) == 1 and sent[0].startswith(f"⚠️ No successful {source.upper()} announcement check")
+    last[job] = ist(28, 11, 58)
     watchdog.bse_watchdog()
-    assert sent[-1] == "✅ BSE fetcher: BSE announcements working again."
+    assert sent[-1] == f"✅ {source.upper()} announcements working again."
 
 
 # ---- worker modes
 
 
 @pytest.mark.parametrize(
-    ("mode", "present", "absent"),
+    ("source", "fetch", "present", "absent"),
     [
-        ("here", {"poll_announcements", "sync_scrips"}, {"bse_watchdog"}),
-        ("remote", {"bse_watchdog"}, {"poll_announcements", "sync_scrips"}),
+        ("bse", "here", {"poll_announcements", "sync_scrips"}, {"bse_watchdog", "poll_nse_announcements"}),
+        ("bse", "remote", {"bse_watchdog"}, {"poll_announcements", "sync_scrips", "poll_nse_announcements"}),
+        ("nse", "remote", {"bse_watchdog", "poll_nse_announcements"}, {"poll_announcements", "sync_scrips"}),
+        ("nse", "here", {"poll_nse_announcements", "sync_scrips"}, {"poll_announcements", "bse_watchdog"}),
     ],
 )
-def test_worker_jobs_follow_bse_fetch(monkeypatch, mode, present, absent):
-    monkeypatch.setattr(worker, "get_settings", lambda: SimpleNamespace(bse_fetch=mode))
+def test_worker_jobs_follow_settings(monkeypatch, source, fetch, present, absent):
+    settings = SimpleNamespace(announcement_source=source, bse_fetch=fetch)
+    monkeypatch.setattr(worker, "get_settings", lambda: settings)
     ids = {job.id for job in worker.build_scheduler().get_jobs()}
     assert present <= ids and not (absent & ids) and "fan_out" in ids

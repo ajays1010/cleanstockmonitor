@@ -24,11 +24,11 @@ MAX_CAPTION = 1024
 TONE_BADGES = {"positive": "🟢 Positive", "neutral": "⚪ Neutral", "negative": "🔴 Negative"}
 
 
-def announcement_event(a: Announcement, scrip_id: int, nse_symbol: str | None) -> dict:
+def announcement_event(a: Announcement, scrip_id: int, nse_symbol: str | None, source: str = "bse") -> dict:
     return {
         "kind": "announcement",
         "scrip_id": scrip_id,
-        "source": "bse",
+        "source": source,
         "source_id": a.news_id,
         "title": a.headline[:500],
         "occurred_at": a.published_at.isoformat(),

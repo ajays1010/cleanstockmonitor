@@ -17,6 +17,7 @@ from app.core.db import get_db
 from app.core.quote_source import fetch_quotes, snapshot_row
 from app.core.timeutil import IST, MARKET_OPEN, now_ist
 from app.jobs.runner import tracked
+from app.sources import nse
 from app.sources.bse import BseError, fetch_announcements
 
 log = logging.getLogger(__name__)
@@ -74,6 +75,45 @@ def poll_announcements() -> dict:
     if errors and errors == len(scrips):
         raise RuntimeError(f"BSE failed for all {errors} scrips")
     return {"scrips": len(scrips), "fetched": len(events), "new": _insert_events(events), "errors": errors}
+
+
+def _has_events(source: str) -> bool:
+    return bool(get_db().table("events").select("id").eq("source", source).limit(1).execute().data)
+
+
+@tracked("poll_nse_announcements")
+def poll_nse_announcements() -> dict:
+    """NSE filings for watched scrips listed there; used while BSE is unreachable
+    (ANNOUNCEMENT_SOURCE=nse). Scrips listed only on BSE are not covered."""
+    scrips = _distinct_scrips(_watchlist())
+    listed = [s for s in scrips.values() if s.get("nse_symbol")]
+    # The first NSE poll only records what is there: those filings already went out from BSE.
+    baseline = not _has_events("nse")
+    events, errors = [], 0
+    with nse.client() as http:
+        for s in listed:
+            sme = nse.is_sme(s.get("fyers_symbol"))
+            try:
+                for a in nse.fetch_announcements(s["nse_symbol"], s["bse_code"], http, sme=sme):
+                    events.append(alerts.announcement_event(a, s["id"], s["nse_symbol"], source="nse"))
+            except nse.NseError as exc:
+                errors += 1
+                log.warning("NSE %s: %s", s["nse_symbol"], exc)
+            time.sleep(0.3)  # be gentle with NSE
+    if errors and errors == len(listed):
+        raise RuntimeError(f"NSE failed for all {errors} scrips")
+    if baseline:
+        stamp = datetime.now(UTC).isoformat()
+        for e in events:
+            e["fanned_out_at"] = stamp
+    return {
+        "scrips": len(listed),
+        "bse_only": len(scrips) - len(listed),
+        "fetched": len(events),
+        "new": _insert_events(events),
+        "errors": errors,
+        "baseline": baseline,
+    }
 
 
 @tracked("poll_prices")

@@ -139,13 +139,17 @@ MAX_PDF_BYTES = 20 * 1024 * 1024  # larger filings go out as a link
 
 
 def download_pdf(url: str, client: httpx.Client) -> bytes:
-    """A filing's PDF, or BseError if it is missing, not a PDF, or over MAX_PDF_BYTES."""
+    """A filing's PDF (from BSE or NSE), or BseError if it is missing, not a PDF, or over
+    MAX_PDF_BYTES."""
     data = bytearray()
     try:
         with client.stream(
             "GET",
             url,
-            headers={**HEADERS, "Accept": "application/pdf,*/*"},
+            headers={
+                **(HEADERS if "bseindia.com" in url else {"User-Agent": BROWSER_USER_AGENT}),
+                "Accept": "application/pdf,*/*",
+            },
             follow_redirects=True,
             timeout=60,
         ) as resp:

@@ -35,8 +35,12 @@ class Settings(BaseSettings):
     gemini_api_key: SecretStr = SecretStr("")
     gemini_model: str = "gemini-2.5-flash"
 
-    # Who reads BSE. "here": this worker polls it. "remote": BSE blocks this server, so the
-    # fetcher app (app/fetcher.py, on Render) polls it and this worker only watches that it runs.
+    # Where announcements come from. "nse" is the stand-in while BSE cannot be read: the
+    # worker polls NSE itself (NSE does not block servers) and no BSE announcements are read.
+    announcement_source: Literal["bse", "nse"] = "bse"
+    # Who reads BSE (announcements when the source is BSE, and the scrip list). "here": this
+    # worker. "remote": BSE blocks this server, so a fetcher elsewhere (app/fetcher.py) does,
+    # and this worker only watches that it runs.
     bse_fetch: Literal["here", "remote"] = "here"
     # The fetcher only: shared secret its scheduler sends in the X-Fetcher-Key header.
     fetcher_secret: SecretStr = SecretStr("")
