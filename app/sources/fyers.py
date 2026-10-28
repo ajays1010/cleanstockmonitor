@@ -15,13 +15,13 @@ import hashlib
 import io
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from urllib.parse import urlencode
 
 import httpx
 
-from app.core.timeutil import IST
+from app.core.timeutil import IST, MARKET_CLOSE
 from app.sources.quotes import Quote
 
 log = logging.getLogger(__name__)
@@ -146,16 +146,26 @@ def _dec(value) -> Decimal | None:
     return None if value in (None, "") else Decimal(str(value))
 
 
-def parse_quotes(data: dict) -> dict[str, Quote]:
+def _quoted_at(tt, now: datetime) -> datetime:
+    """Fyers' tt is the trading day (midnight UTC), not the trade time. Today's quote is
+    as of now; an older one is that day's close, so stale quotes stay detectable."""
+    try:
+        day = datetime.fromtimestamp(int(tt), tz=UTC).date()
+    except (TypeError, ValueError):
+        return now
+    if day >= now.date():
+        return now
+    return datetime.combine(day, MARKET_CLOSE, tzinfo=IST)
+
+
+def parse_quotes(data: dict, now: datetime | None = None) -> dict[str, Quote]:
+    now = (now or datetime.now(IST)).astimezone(IST)
     out = {}
     for item in data.get("d") or []:
         v = item.get("v") or {}
         if item.get("s") != "ok" or v.get("lp") in (None, ""):
             continue
-        try:
-            quoted_at = datetime.fromtimestamp(int(v["tt"]), tz=IST)
-        except (KeyError, TypeError, ValueError):
-            quoted_at = datetime.now(IST)
+        quoted_at = _quoted_at(v.get("tt"), now)
         out[item["n"]] = Quote(
             ltp=Decimal(str(v["lp"])),
             prev_close=_dec(v.get("prev_close_price")),

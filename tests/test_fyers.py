@@ -1,6 +1,6 @@
 import hashlib
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from urllib.parse import parse_qs, urlparse
 
@@ -100,7 +100,7 @@ SAMPLE = {
 
 
 def test_parse_quotes():
-    q = parse_quotes(SAMPLE)
+    q = parse_quotes(SAMPLE, NOW)
     assert list(q) == ["NSE:SBIN-EQ"]
     s = q["NSE:SBIN-EQ"]
     assert (s.ltp, s.prev_close, s.day_high, s.day_low, s.source) == (
@@ -110,7 +110,18 @@ def test_parse_quotes():
         Decimal("585"),
         "fyers",
     )
-    assert s.quoted_at.tzinfo == IST
+
+
+def test_quote_time_comes_from_trading_day_not_tt():
+    # tt is midnight UTC of the trading day (05:30 IST); real responses look like this.
+    def at(tt):
+        data = {"d": [{"n": "X", "s": "ok", "v": {"lp": 1, "tt": str(tt)}}]}
+        return parse_quotes(data, NOW)["X"].quoted_at
+
+    today = int(datetime(2026, 10, 27, tzinfo=UTC).timestamp())
+    assert at(today) == NOW
+    assert at(today - 86400) == datetime(2026, 10, 26, 15, 30, tzinfo=IST)
+    assert at("junk") == NOW
 
 
 def test_quotes_batches_of_50_with_auth_header():
