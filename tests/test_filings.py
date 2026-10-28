@@ -119,7 +119,16 @@ def test_summarise_sends_pdf_inline_and_parses(gemini_key):
     assert seen["body"]["generationConfig"]["responseMimeType"] == "application/json"
 
 
-def test_summarise_errors(gemini_key):
+def test_summarise_retries_once_when_busy(gemini_key, monkeypatch):
+    monkeypatch.setattr(gemini, "RETRY_DELAY", 0)
+    replies = [gemini_reply("high demand", 503), gemini_reply({"points": ["ok"], "tone": "neutral"})]
+    client = httpx.Client(transport=httpx.MockTransport(lambda r: replies.pop(0)))
+    assert gemini.summarise(PDF, "X", "Y", client).points == ("ok",)
+
+
+def test_summarise_errors(gemini_key, monkeypatch):
+    monkeypatch.setattr(gemini, "RETRY_DELAY", 0)
+
     def run(reply):
         client = httpx.Client(transport=httpx.MockTransport(lambda r: reply))
         return gemini.summarise(PDF, "X", "Y", client)

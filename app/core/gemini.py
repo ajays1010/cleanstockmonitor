@@ -7,6 +7,7 @@ categories in SUMMARY_CATEGORIES are summarised; routine filings are not worth t
 import base64
 import json
 import logging
+import time
 from dataclasses import dataclass
 
 import httpx
@@ -20,6 +21,8 @@ SUMMARY_CATEGORIES = frozenset({"results", "orders", "board_meeting", "corporate
 MAX_PDF_BYTES = 14 * 1024 * 1024  # inline requests are capped at 20 MB after base64
 MAX_POINTS = 4
 TONES = ("positive", "neutral", "negative")
+RETRY_STATUSES = (429, 500, 503)
+RETRY_DELAY = 10
 
 PROMPT = """You are summarising a stock-exchange filing by {company}, an Indian listed company, \
 for a shareholder who will read it on a phone.
@@ -104,12 +107,17 @@ def summarise(pdf: bytes, company: str, headline: str, client: httpx.Client | No
     }
     http = client or httpx.Client(timeout=90)
     try:
-        resp = http.post(
-            API_URL.format(model=settings.gemini_model), json=body, headers={"x-goog-api-key": key}
-        )
-        data = resp.json()
-    except (httpx.HTTPError, ValueError) as exc:
-        raise GeminiError(f"{type(exc).__name__}: {exc}") from exc
+        for attempt in range(2):
+            try:
+                resp = http.post(
+                    API_URL.format(model=settings.gemini_model), json=body, headers={"x-goog-api-key": key}
+                )
+                data = resp.json()
+            except (httpx.HTTPError, ValueError) as exc:
+                raise GeminiError(f"{type(exc).__name__}: {exc}") from exc
+            if resp.status_code not in RETRY_STATUSES or attempt:
+                break
+            time.sleep(RETRY_DELAY)  # "model is experiencing high demand" is usually brief
     finally:
         if client is None:
             http.close()
