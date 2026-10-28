@@ -1,0 +1,20 @@
+[Unit]
+Description=StockMonitor scheduler (BSE, prices, Telegram fan-out)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=stockmonitor
+Group=stockmonitor
+# Settings come from /opt/stockmonitor/.env, read by the app itself.
+WorkingDirectory=/opt/stockmonitor
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/stockmonitor/.venv/bin/python -m app.worker
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

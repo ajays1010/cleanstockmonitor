@@ -1,0 +1,20 @@
+[Unit]
+Description=StockMonitor web app
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=stockmonitor
+Group=stockmonitor
+# Settings come from /opt/stockmonitor/.env, read by the app itself.
+WorkingDirectory=/opt/stockmonitor
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/stockmonitor/.venv/bin/uvicorn app.web.main:app --host 127.0.0.1 --port 8002 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
