@@ -4,6 +4,8 @@ Events are stored once in `events`. An event either targets one user (price aler
 summaries carry payload.user_id) or every watcher of its scrip (announcements).
 """
 
+import html
+import re
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
@@ -16,6 +18,10 @@ from app.sources.quotes import Quote
 # An announcement older than this is never sent, so a first poll or a long outage
 # does not flood chats with old filings.
 MAX_ANNOUNCEMENT_AGE = timedelta(hours=24)
+
+# Telegram's caption limit, counted in UTF-16 units of the text after HTML is parsed.
+MAX_CAPTION = 1024
+TONE_BADGES = {"positive": "🟢 Positive", "neutral": "⚪ Neutral", "negative": "🔴 Negative"}
 
 
 def announcement_event(a: Announcement, scrip_id: int, nse_symbol: str | None) -> dict:
@@ -156,24 +162,53 @@ def _who(p: dict) -> str:
     return f"<b>{esc(p.get('company'))}</b> ({esc(tag)})"
 
 
+def _announcement(event: dict, link: bool, points: int | None = None, title_len: int = 500) -> str:
+    p = event.get("payload") or {}
+    when = datetime.fromisoformat(event["occurred_at"]).astimezone(IST)
+    label = CATEGORIES.get(p.get("category"), "Update")
+    bse_label = " · ".join(x for x in (p.get("bse_category"), p.get("bse_subcategory")) if x)
+    title = event["title"] if len(event["title"]) <= title_len else event["title"][: title_len - 1] + "…"
+    lines = [
+        f"📢 {_who(p)}",
+        f"<i>{esc(label)}</i>" + (f" · {esc(bse_label)}" if bse_label else ""),
+        "",
+        esc(title),
+    ]
+    summary = p.get("summary") or {}
+    shown = (summary.get("points") or [])[:points]
+    if shown:
+        lines += ["", "🤖 <b>AI summary</b> (not advice)", *(f"• {esc(x)}" for x in shown)]
+        lines.append(f"Tone: {TONE_BADGES.get(summary.get('tone'), TONE_BADGES['neutral'])}")
+    if link and p.get("pdf_url"):
+        lines += ["", f'<a href="{esc(p["pdf_url"])}">Open filing (PDF)</a>']
+    elif shown:
+        lines.append("")
+    lines.append(f"🕒 {when:%d %b %Y, %H:%M} IST")
+    return "\n".join(lines)
+
+
+def _visible_len(text: str) -> int:
+    plain = html.unescape(re.sub(r"<[^>]+>", "", text))
+    return len(plain.encode("utf-16-le")) // 2
+
+
+def caption(event: dict) -> str:
+    """An announcement as the caption of its attached PDF: no link (the file is right
+    there), with summary points dropped from the end until it fits Telegram's limit."""
+    points = len(((event.get("payload") or {}).get("summary") or {}).get("points") or [])
+    for n in range(points, -1, -1):
+        text = _announcement(event, link=False, points=n)
+        if _visible_len(text) <= MAX_CAPTION:
+            return text
+    return _announcement(event, link=False, points=0, title_len=300)
+
+
 def render(event: dict) -> str:
     """Telegram HTML message for an event."""
     p = event.get("payload") or {}
     kind = event["kind"]
     if kind == "announcement":
-        when = datetime.fromisoformat(event["occurred_at"]).astimezone(IST)
-        label = CATEGORIES.get(p.get("category"), "Update")
-        bse_label = " · ".join(x for x in (p.get("bse_category"), p.get("bse_subcategory")) if x)
-        lines = [
-            f"📢 {_who(p)}",
-            f"<i>{esc(label)}</i>" + (f" · {esc(bse_label)}" if bse_label else ""),
-            "",
-            esc(event["title"]),
-        ]
-        if p.get("pdf_url"):
-            lines += ["", f'<a href="{esc(p["pdf_url"])}">Open filing (PDF)</a>']
-        lines.append(f"🕒 {when:%d %b %Y, %H:%M} IST")
-        return "\n".join(lines)
+        return _announcement(event, link=True)
     if kind == "price_spike":
         change = _change_pct(p.get("ltp"), p.get("prev_close"))
         if p.get("rule") == "spike":

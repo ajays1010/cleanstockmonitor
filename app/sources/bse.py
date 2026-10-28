@@ -133,3 +133,30 @@ def fetch_announcements(bse_code: str, client: httpx.Client, days: int = 2) -> l
     if not isinstance(data, dict):  # "No Record Found!" comes back as a bare string
         return []
     return parse_rows(data.get("Table") or [])
+
+
+MAX_PDF_BYTES = 20 * 1024 * 1024  # larger filings go out as a link
+
+
+def download_pdf(url: str, client: httpx.Client) -> bytes:
+    """A filing's PDF, or BseError if it is missing, not a PDF, or over MAX_PDF_BYTES."""
+    data = bytearray()
+    try:
+        with client.stream(
+            "GET",
+            url,
+            headers={**HEADERS, "Accept": "application/pdf,*/*"},
+            follow_redirects=True,
+            timeout=60,
+        ) as resp:
+            if resp.status_code != 200:
+                raise BseError(f"HTTP {resp.status_code} for {url}")
+            for chunk in resp.iter_bytes():
+                data += chunk
+                if len(data) > MAX_PDF_BYTES:
+                    raise BseError(f"PDF over {MAX_PDF_BYTES // 2**20} MB: {url}")
+    except httpx.HTTPError as exc:
+        raise BseError(f"{type(exc).__name__}: {exc}") from exc
+    if not data.startswith(b"%PDF"):
+        raise BseError(f"Not a PDF: {url}")
+    return bytes(data)

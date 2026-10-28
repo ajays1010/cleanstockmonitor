@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # Must match the redirect URL saved in the Fyers app; defaults to APP_BASE_URL/admin/fyers/callback.
     fyers_redirect_uri: str = ""
 
+    # Optional: AI summaries of important filings (aistudio.google.com).
+    gemini_api_key: SecretStr = SecretStr("")
+    gemini_model: str = "gemini-2.5-flash"
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"

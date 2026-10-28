@@ -12,10 +12,9 @@ from datetime import UTC, date, datetime, timedelta
 
 import httpx
 
-from app.core import alerts
+from app.core import alerts, filings
 from app.core.db import get_db
 from app.core.quote_source import fetch_quotes, snapshot_row
-from app.core.telegram import send_message
 from app.core.timeutil import IST, MARKET_OPEN, now_ist
 from app.jobs.runner import tracked
 from app.sources.bse import BseError, fetch_announcements
@@ -118,8 +117,15 @@ def _active_chats() -> dict[str, list[int]]:
     return by_user
 
 
-def _send(delivery_id: int, chat_id: int, event: dict, attempts: int) -> bool:
-    result = send_message(chat_id, alerts.render(event))
+def _save_payload(event: dict) -> None:
+    get_db().table("events").update({"payload": event["payload"]}).eq("id", event["id"]).execute()
+
+
+def _send(delivery_id: int, chat_id: int, event: dict, attempts: int, pdf: bytes | None = None) -> bool:
+    uploaded = (event.get("payload") or {}).get("tg_file_id")
+    result = filings.deliver(chat_id, event, pdf)
+    if (event.get("payload") or {}).get("tg_file_id") != uploaded:
+        _save_payload(event)  # later chats and retries resend Telegram's copy
     db = get_db().table("deliveries")
     if result.ok:
         db.update(
@@ -157,29 +163,43 @@ def fan_out() -> dict:
 
     now = now_ist()
     sent = failed = 0
-    for event in events:
-        pairs = alerts.targets(event, watch_by_scrip.get(event["scrip_id"], []), chats, now)
-        new_rows = []
-        if pairs:
-            new_rows = (
-                db.table("deliveries")
-                .upsert(
-                    [{"event_id": event["id"], "chat_id": c, "user_id": u} for c, u in pairs],
-                    on_conflict="event_id,chat_id",
-                    ignore_duplicates=True,
-                )
-                .execute()
-                .data
-            )
-        db.table("events").update({"fanned_out_at": datetime.now(UTC).isoformat()}).eq(
-            "id", event["id"]
-        ).execute()
-        for row in new_rows:
-            if _send(row["id"], row["chat_id"], event, 0):
-                sent += 1
-            else:
-                failed += 1
+    http = httpx.Client(timeout=60)
+    try:
+        for event in events:
+            ok, bad = _fan_out_event(db, http, event, watch_by_scrip, chats, now)
+            sent += ok
+            failed += bad
+    finally:
+        http.close()
     return {"events": len(events), "sent": sent, "failed": failed}
+
+
+def _fan_out_event(db, http, event, watch_by_scrip, chats, now) -> tuple[int, int]:
+    """Create one event's deliveries and send them; returns (sent, failed)."""
+    pairs = alerts.targets(event, watch_by_scrip.get(event["scrip_id"], []), chats, now)
+    pdf = None
+    new_rows = []
+    if pairs:
+        # Only filings someone will receive are downloaded and summarised.
+        before = dict(event.get("payload") or {})
+        pdf = filings.prepare(event, http)
+        if event.get("payload") != before:
+            _save_payload(event)
+        new_rows = (
+            db.table("deliveries")
+            .upsert(
+                [{"event_id": event["id"], "chat_id": c, "user_id": u} for c, u in pairs],
+                on_conflict="event_id,chat_id",
+                ignore_duplicates=True,
+            )
+            .execute()
+            .data
+        )
+    db.table("events").update({"fanned_out_at": datetime.now(UTC).isoformat()}).eq(
+        "id", event["id"]
+    ).execute()
+    sent = sum(_send(row["id"], row["chat_id"], event, 0, pdf) for row in new_rows)
+    return sent, len(new_rows) - sent
 
 
 @tracked("retry_failed")
