@@ -9,7 +9,7 @@ MIGRATIONS = Path(__file__).resolve().parent.parent / "supabase" / "migrations"
 
 
 def test_every_table_has_row_level_security():
-    sql = (MIGRATIONS / "0001_schema.sql").read_text(encoding="utf-8")
+    sql = "\n".join(p.read_text(encoding="utf-8") for p in sorted(MIGRATIONS.glob("*.sql")))
     tables = set(re.findall(r"^create table (\w+)", sql, flags=re.M))
     secured = set(re.findall(r"^alter table (\w+) enable row level security", sql, flags=re.M))
     assert tables, "no tables found"

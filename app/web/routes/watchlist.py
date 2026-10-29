@@ -101,9 +101,14 @@ def update_settings(
     price_above: Annotated[str, Form()] = "",
     price_below: Annotated[str, Form()] = "",
     categories: Annotated[list[str] | None, Form()] = None,
+    volume_multiple: Annotated[str, Form()] = "",
+    volume_above: Annotated[str, Form()] = "",
+    dma_alerts: Annotated[list[str] | None, Form()] = None,
 ):
     try:
-        settings = parse_settings(spike_pct, price_above, price_below, categories or [])
+        settings = parse_settings(
+            spike_pct, price_above, price_below, categories or [], volume_multiple, volume_above, dma_alerts
+        )
         store.update(user.id, item_id, settings)
     except WatchlistError as exc:
         return render_watchlist(

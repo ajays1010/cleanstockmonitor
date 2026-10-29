@@ -4,6 +4,8 @@ from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
 
+from app.core.alerts import volume_text
+
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=HERE / "templates")
 
@@ -21,3 +23,4 @@ def plain_number(value: Decimal | None) -> str:
 
 
 templates.env.filters["num"] = plain_number
+templates.env.filters["shares"] = volume_text  # 500000 -> "5.00 L"

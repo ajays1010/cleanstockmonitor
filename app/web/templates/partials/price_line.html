@@ -9,6 +9,12 @@
       {% else %}<span>⚪ 0.00%</span>{% endif %}
     {% endif %}
     <span class="muted small">{{ p.label }}</span>
+    {% if p.dmas %}
+      <br><span class="small dmas">
+        {% for period, level, gap in p.dmas %}{{ period }} DMA ₹{{ '{:,.2f}'.format(level) }}
+          <span class="{{ 'up' if gap >= 0 else 'down' }}">({{ '%+.1f'|format(gap) }}%)</span>{{ " · " if not loop.last }}{% endfor %}
+      </span>
+    {% endif %}
   {% else %}
     <span class="muted small">No price yet</span>
   {% endif %}

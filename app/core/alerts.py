@@ -1,12 +1,13 @@
 """Alert rules and messages, as pure functions over plain dicts so they are easy to test.
 
 Events are stored once in `events`. An event either targets one user (price alerts and
-summaries carry payload.user_id) or every watcher of its scrip (announcements).
+summaries carry payload.user_id) or every watcher of its scrip (announcements). Volume
+and DMA alerts are price_spike events too, told apart by payload.rule.
 """
 
 import html
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from app.core.categories import CATEGORIES
@@ -22,6 +23,8 @@ MAX_ANNOUNCEMENT_AGE = timedelta(hours=24)
 # Telegram's caption limit, counted in UTF-16 units of the text after HTML is parsed.
 MAX_CAPTION = 1024
 TONE_BADGES = {"positive": "🟢 Positive", "neutral": "⚪ Neutral", "negative": "🔴 Negative"}
+# Volume this strong this early in the session is the signal that matters most.
+VOLUME_EARLY_BY = time(12, 30)
 
 
 def announcement_event(a: Announcement, scrip_id: int, nse_symbol: str | None, source: str = "bse") -> dict:
@@ -48,9 +51,22 @@ def _money(value: Decimal | float | str) -> str:
     return f"₹{Decimal(str(value)):,.2f}"
 
 
-def price_events(user_id: str, scrip: dict, settings: dict, quote: Quote, today: date) -> list[dict]:
-    """Price alerts this quote triggers for one watchlist row. Each fires at most once a
-    day per direction, because its source_id carries the date."""
+def volume_text(value) -> str:
+    """Share counts in Indian units: 85,400 / 1.84 L / 2.10 Cr."""
+    n = int(value)
+    if n >= 10_000_000:
+        return f"{n / 10_000_000:.2f} Cr"
+    if n >= 100_000:
+        return f"{n / 100_000:.2f} L"
+    return f"{n:,}"
+
+
+def price_events(
+    user_id: str, scrip: dict, settings: dict, quote: Quote, today: date, stats: dict | None = None
+) -> list[dict]:
+    """Price, volume and DMA alerts this quote triggers for one watchlist row. Each fires
+    at most once a day per rule (and direction or level), because its source_id carries the
+    date. `stats` is the scrip's scrip_stats row (20-day average volume, DMAs), if any."""
     out = []
     base = {
         "scrip_id": scrip["id"],
@@ -107,6 +123,69 @@ def price_events(user_id: str, scrip: dict, settings: dict, quote: Quote, today:
                 "source_id": f"below:{key}:{below}",
                 "title": f"{scrip['name']} below {_money(below)}",
                 "payload": {**payload, "rule": "below", "level": str(below)},
+            }
+        )
+
+    stats = stats or {}
+    volume = quote.volume
+    at = quote.quoted_at.astimezone(IST)
+    volume_payload = {**payload, "volume": volume, "at": f"{at:%H:%M}"}
+    multiple, average = settings.get("volume_multiple"), stats.get("avg_volume_20")
+    if multiple is not None and average and volume is not None:
+        ratio = Decimal(volume) / Decimal(average)
+        if ratio >= Decimal(str(multiple)):
+            out.append(
+                {
+                    **base,
+                    "kind": "price_spike",
+                    "source_id": f"volx:{key}:{multiple}",
+                    "title": f"{scrip['name']} volume {ratio:.1f}x average",
+                    "payload": {
+                        **volume_payload,
+                        "rule": "volume_x",
+                        "avg_volume": average,
+                        "ratio": f"{ratio:.1f}",
+                        "multiple": str(multiple),
+                        "early": at.time() <= VOLUME_EARLY_BY,
+                    },
+                }
+            )
+    threshold = settings.get("volume_above")
+    if threshold and volume is not None and volume >= int(threshold):
+        out.append(
+            {
+                **base,
+                "kind": "price_spike",
+                "source_id": f"vola:{key}:{threshold}",
+                "title": f"{scrip['name']} volume above {volume_text(threshold)}",
+                "payload": {**volume_payload, "rule": "volume_above", "threshold": int(threshold)},
+            }
+        )
+    for period in settings.get("dma_alerts") or []:
+        level = stats.get(f"dma_{period}")
+        if level is None or quote.prev_close is None:
+            continue
+        level = Decimal(str(level))
+        # A cross is judged against yesterday's close: it fires once, on the day it happens.
+        if quote.prev_close < level <= quote.ltp:
+            direction = "up"
+        elif quote.prev_close > level >= quote.ltp:
+            direction = "down"
+        else:
+            continue
+        out.append(
+            {
+                **base,
+                "kind": "price_spike",
+                "source_id": f"dma{period}:{key}:{direction}",
+                "title": f"{scrip['name']} {'above' if direction == 'up' else 'below'} {period} DMA",
+                "payload": {
+                    **payload,
+                    "rule": "dma",
+                    "period": period,
+                    "level": str(level),
+                    "direction": direction,
+                },
             }
         )
     return out
@@ -211,11 +290,33 @@ def render(event: dict) -> str:
         return _announcement(event, link=True)
     if kind == "price_spike":
         change = _change_pct(p.get("ltp"), p.get("prev_close"))
-        if p.get("rule") == "spike":
+        rule = p.get("rule")
+        if rule == "spike":
             icon = "📈" if p.get("direction") == "up" else "📉"
             lines = [f"{icon} Price Alert: {_who(p)}"]
+        elif rule == "volume_x":
+            early = " ⭐ before midday" if p.get("early") else ""
+            lines = [
+                f"📊 Volume Alert: {_who(p)}",
+                f"Volume: {volume_text(p['volume'])} by {p['at']} "
+                f"({p['ratio']}× 20-day avg of {volume_text(p['avg_volume'])}){early}",
+            ]
+        elif rule == "volume_above":
+            lines = [
+                f"📊 Volume Alert: {_who(p)}",
+                f"Volume crossed {volume_text(p['threshold'])}: now {volume_text(p['volume'])} by {p['at']}",
+            ]
+            if p.get("day_high") and p.get("day_high") == p.get("day_low"):
+                lines.append(
+                    f"Traded only at {_money(p['ltp'])} today, so it looks circuit-locked; "
+                    "rising volume can mean the circuit is about to open."
+                )
+        elif rule == "dma":
+            word = "Crossed above" if p.get("direction") == "up" else "Fell below"
+            icon = "📐🟢" if p.get("direction") == "up" else "📐🔴"
+            lines = [f"{icon} DMA Alert: {_who(p)}", f"{word} its {p['period']} DMA ({_money(p['level'])})"]
         else:
-            word = "above" if p.get("rule") == "above" else "below"
+            word = "above" if rule == "above" else "below"
             lines = [f"🔔 Price Alert: {_who(p)}", f"Crossed {word} {_money(p['level'])}"]
         price = f"Price: {_money(p['ltp'])}"
         if change is not None:

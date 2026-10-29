@@ -14,6 +14,7 @@ from app.jobs import market
 from app.jobs.fyers_reminder import fyers_reminder
 from app.jobs.heartbeat import heartbeat
 from app.jobs.scrips import sync_scrips
+from app.jobs.stats import update_scrip_stats
 from app.jobs.watchdog import bse_watchdog
 
 log = logging.getLogger(__name__)
@@ -52,6 +53,9 @@ def build_scheduler() -> BlockingScheduler:
         market.daily_summary, "cron", hour=16, minute=0, day_of_week="mon-fri", id="daily_summary"
     )
     scheduler.add_job(market.cleanup, "cron", hour=2, minute=0, id="cleanup")
+    # 20-day average volume and DMAs for volume and DMA alerts: after the close, and again
+    # before the open to catch scrips added overnight.
+    scheduler.add_job(update_scrip_stats, "cron", hour="8,18", minute=30, id="update_scrip_stats")
     # Fyers sessions end at 06:30 IST and can no longer be refreshed (SEBI rules): nudge
     # the admin to log in before the open; Yahoo covers any day without a login.
     scheduler.add_job(fyers_reminder, "cron", hour=8, minute=45, day_of_week="mon-fri", id="fyers_reminder")

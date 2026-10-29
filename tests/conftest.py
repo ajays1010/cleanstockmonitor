@@ -105,6 +105,9 @@ class FakeWatchlist:
                 price_above=settings.price_above,
                 price_below=settings.price_below,
                 categories=settings.categories,
+                volume_multiple=settings.volume_multiple,
+                volume_above=settings.volume_above,
+                dma_alerts=settings.dma_alerts,
             ),
         )
 

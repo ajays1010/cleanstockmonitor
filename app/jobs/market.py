@@ -30,6 +30,7 @@ PERMANENT_ERRORS = ("blocked by the user", "chat not found", "kicked", "deactiva
 
 WATCH_COLUMNS = (
     "user_id, created_at, spike_pct, price_above, price_below, categories, "
+    "volume_multiple, volume_above, dma_alerts, "
     "scrips(id, bse_code, name, nse_symbol, yahoo_symbol, fyers_symbol)"
 )
 
@@ -42,8 +43,12 @@ def _distinct_scrips(rows: list[dict]) -> dict[int, dict]:
     return {r["scrips"]["id"]: r["scrips"] for r in rows}
 
 
+def watched_scrips() -> list[dict]:
+    return list(_distinct_scrips(_watchlist()).values())
+
+
 def watched_bse_codes() -> list[str]:
-    return sorted({s["bse_code"] for s in _distinct_scrips(_watchlist()).values()})
+    return sorted({s["bse_code"] for s in watched_scrips()})
 
 
 def _insert_events(events: list[dict]) -> int:
@@ -172,11 +177,17 @@ def poll_prices() -> dict:
             [snapshot_row(scrip_id, q) for scrip_id, q in quotes.items()], on_conflict="scrip_id"
         ).execute()
 
+    stats = {}
+    if quotes:
+        for r in get_db().table("scrip_stats").select("*").in_("scrip_id", list(quotes)).execute().data:
+            stats[r["scrip_id"]] = r
     events = []
     for row in rows:
-        quote = quotes.get(row["scrips"]["id"])
-        if quote:
-            events += alerts.price_events(row["user_id"], row["scrips"], row, quote, now.date())
+        scrip_id = row["scrips"]["id"]
+        if quote := quotes.get(scrip_id):
+            events += alerts.price_events(
+                row["user_id"], row["scrips"], row, quote, now.date(), stats.get(scrip_id)
+            )
     return {
         "scrips": len(scrips),
         "quotes": len(quotes),

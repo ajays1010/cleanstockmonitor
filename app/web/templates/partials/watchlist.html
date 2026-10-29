@@ -26,6 +26,9 @@
             {% if item.price_above %} · Above ₹{{ '{:,.2f}'.format(item.price_above) }}{% endif %}
             {% if item.price_below %} · Below ₹{{ '{:,.2f}'.format(item.price_below) }}{% endif %}
             · {% if item.categories %}{{ item.categories|length }} announcement type{{ 's' if item.categories|length != 1 }}{% else %}All announcements{% endif %}
+            {% if item.volume_multiple %} · Volume {{ item.volume_multiple|num }}× avg{% endif %}
+            {% if item.volume_above %} · Volume over {{ item.volume_above|shares }}{% endif %}
+            {% if item.dma_alerts %} · {{ item.dma_alerts|join("/") }} DMA crossings{% endif %}
           </p>
 
           <details {% if error_item == item.id %}open{% endif %}>
@@ -46,7 +49,25 @@
                   <input name="price_below" inputmode="decimal" placeholder="Off"
                          value="{{ item.price_below|num }}">
                 </label>
+                <label>Volume (× 20-day average)
+                  <input name="volume_multiple" inputmode="decimal" placeholder="Off, e.g. 3"
+                         value="{{ item.volume_multiple|num }}">
+                </label>
+                <label>Volume above (shares)
+                  <input name="volume_above" placeholder="Off, e.g. 500K or 5L"
+                         value="{{ item.volume_above or '' }}">
+                </label>
               </div>
+              <fieldset>
+                <legend>DMA crossing alerts (price crosses the average during the day)</legend>
+                {% for period in [20, 50, 200] %}
+                  <label class="check">
+                    <input type="checkbox" name="dma_alerts" value="{{ period }}"
+                           {% if period in item.dma_alerts %}checked{% endif %}>
+                    {{ period }} DMA
+                  </label>
+                {% endfor %}
+              </fieldset>
               <fieldset>
                 <legend>Announcements to send</legend>
                 {% for key, label in categories.items() %}

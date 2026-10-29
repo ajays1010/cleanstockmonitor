@@ -12,6 +12,10 @@ from app.core.categories import CATEGORIES
 MAX_WATCHLIST = 50
 SPIKE_MIN, SPIKE_MAX = Decimal("0.5"), Decimal("50")
 DEFAULT_SPIKE = Decimal("5")
+VOLUME_MULTIPLE_MIN, VOLUME_MULTIPLE_MAX = Decimal("1.5"), Decimal("50")
+DMA_CHOICES = (20, 50, 200)
+_SHARE_UNITS = {"k": 1_000, "l": 100_000, "lac": 100_000, "lakh": 100_000, "m": 1_000_000, "cr": 10_000_000}
+_SHARES = re.compile(r"^(\d+(?:\.\d+)?)\s*([a-z]*)$")
 
 # PostgREST filter syntax treats , ( ) * : . and quotes specially; keep only plain search characters.
 # Dropping . and ' also matches how the scrip list spells names ("Dr Reddys", not "Dr. Reddy's").
@@ -40,6 +44,9 @@ class WatchItem:
     price_above: Decimal | None
     price_below: Decimal | None
     categories: list[str] = field(default_factory=list)
+    volume_multiple: Decimal | None = None
+    volume_above: int | None = None
+    dma_alerts: list[int] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -48,12 +55,21 @@ class AlertSettings:
     price_above: Decimal | None
     price_below: Decimal | None
     categories: list[str]
+    volume_multiple: Decimal | None = None
+    volume_above: int | None = None
+    dma_alerts: list[int] = field(default_factory=list)
 
 
 def parse_settings(
-    spike_pct: str, price_above: str, price_below: str, categories: list[str]
+    spike_pct: str,
+    price_above: str,
+    price_below: str,
+    categories: list[str],
+    volume_multiple: str = "",
+    volume_above: str = "",
+    dma_alerts: list[str] | None = None,
 ) -> AlertSettings:
-    """Validate form input. Blank spike or price fields mean that alert is off."""
+    """Validate form input. Blank spike, price or volume fields mean that alert is off."""
     spike = _decimal(spike_pct, "Move alert")
     if spike is not None and not SPIKE_MIN <= spike <= SPIKE_MAX:
         raise WatchlistError(f"Move alert must be between {SPIKE_MIN}% and {SPIKE_MAX}%.")
@@ -72,7 +88,33 @@ def parse_settings(
         raise WatchlistError("Pick at least one announcement type, or remove the scrip.")
     # Ticking every category is the same as no filter; store it as empty.
     chosen = [] if set(categories) == CATEGORIES.keys() else [c for c in CATEGORIES if c in categories]
-    return AlertSettings(spike, above, below, chosen)
+    multiple = _decimal(volume_multiple, "Volume multiple")
+    if multiple is not None and not VOLUME_MULTIPLE_MIN <= multiple <= VOLUME_MULTIPLE_MAX:
+        raise WatchlistError(
+            f"Volume multiple must be between {VOLUME_MULTIPLE_MIN}× and {VOLUME_MULTIPLE_MAX}× the average."
+        )
+    try:
+        dmas = sorted({int(d) for d in dma_alerts or []})
+    except ValueError:
+        raise WatchlistError("Unknown DMA.") from None
+    if set(dmas) - set(DMA_CHOICES):
+        raise WatchlistError("Unknown DMA.")
+    return AlertSettings(spike, above, below, chosen, multiple, parse_shares(volume_above), dmas)
+
+
+def parse_shares(raw: str) -> int | None:
+    """A share count such as 500000, 5,00,000, 500K, 5L, 1.5 lakh or 2Cr; blank means off."""
+    text = (raw or "").strip().lower().replace(",", "")
+    if not text:
+        return None
+    match = _SHARES.match(text)
+    unit = _SHARE_UNITS.get(match.group(2), None) if match and match.group(2) else 1
+    if not match or unit is None:
+        raise WatchlistError("Volume threshold must be a number of shares, like 500000, 500K or 5L.")
+    shares = int(Decimal(match.group(1)) * unit)
+    if shares < 1:
+        raise WatchlistError("Volume threshold must be at least 1 share.")
+    return shares
 
 
 def _decimal(raw: str, label: str) -> Decimal | None:
@@ -150,6 +192,7 @@ class WatchlistStore:
             self.db.table("watchlist")
             .select(
                 "id, spike_pct, price_above, price_below, categories, "
+                "volume_multiple, volume_above, dma_alerts, "
                 "scrips(id, bse_code, name, nse_symbol, bse_symbol)"
             )
             .eq("user_id", user_id)
@@ -164,6 +207,9 @@ class WatchlistStore:
                 price_above=_num(r.get("price_above")),
                 price_below=_num(r.get("price_below")),
                 categories=r.get("categories") or [],
+                volume_multiple=_num(r.get("volume_multiple")),
+                volume_above=r.get("volume_above"),
+                dma_alerts=sorted(r.get("dma_alerts") or []),
             )
             for r in rows
         ]
@@ -197,6 +243,9 @@ class WatchlistStore:
                     "price_above": _str(settings.price_above),
                     "price_below": _str(settings.price_below),
                     "categories": settings.categories,
+                    "volume_multiple": _str(settings.volume_multiple),
+                    "volume_above": settings.volume_above,
+                    "dma_alerts": settings.dma_alerts,
                 }
             )
             .eq("id", item_id)
