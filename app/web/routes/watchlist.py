@@ -30,6 +30,7 @@ def watchlist_context(store: WatchlistStore, prices: PriceStore, user: Profile) 
     return {
         "items": items,
         "prices": prices.views([i.scrip.id for i in items]),
+        "nifty": prices.nifty(),
         # Prices only change during the session; outside it the page does not poll.
         "live_prices": bool(items) and is_market_open(now_ist(), set()),
         "categories": CATEGORIES,

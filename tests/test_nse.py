@@ -53,7 +53,8 @@ def test_classify_nse_subjects():
     assert cat("Credit Rating") == "rating"
     assert cat("Analysts/Institutional Investor Meet/Con. Call Updates") == "investor_meet"
     assert cat("Record Date", "Record date for interim dividend") == "corporate_action"
-    assert cat("Trading Window") == "other"
+    assert cat("Trading Window") == "routine"
+    assert cat("Copy of Newspaper Publication") == "routine"
 
 
 def test_fetch_announcements_params_and_errors():
@@ -100,4 +101,4 @@ def test_nse_events_are_tagged_with_their_source():
     [a, _] = nse.parse_rows(ROWS, "543349")
     event = alerts.announcement_event(a, 7, "ACUTAAS", source="nse")
     assert (event["source"], event["source_id"]) == ("nse", "104588231")
-    assert "Financial results</i> · NSE · Outcome of Board Meeting" in alerts.render(event)
+    assert "Results and business updates</i> · NSE · Outcome of Board Meeting" in alerts.render(event)

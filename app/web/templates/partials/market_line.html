@@ -1,0 +1,15 @@
+{# Nifty 50 strip above the watchlist. `oob` marks it as an out-of-band swap for /watchlist/prices. #}
+<p class="price market" id="nifty"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {% if nifty %}
+    <span>Nifty 50</span>
+    <strong>{{ '{:,.2f}'.format(nifty.ltp) }}</strong>
+    {% if nifty.change_pct is not none %}
+      {% if nifty.change_pct > 0 %}<span class="up">🟢 +{{ '%.2f'|format(nifty.change_pct) }}%</span>
+      {% elif nifty.change_pct < 0 %}<span class="down">🔴 −{{ '%.2f'|format(-nifty.change_pct) }}%</span>
+      {% else %}<span>⚪ 0.00%</span>{% endif %}
+    {% endif %}
+    <span class="muted small">{{ nifty.label }}</span>
+  {% else %}
+    <span class="muted small">Nifty 50 unavailable</span>
+  {% endif %}
+</p>

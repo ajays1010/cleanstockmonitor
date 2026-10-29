@@ -199,8 +199,39 @@ def wants_announcement(watch: dict, event: dict, now: datetime) -> bool:
     # Only filings published after the scrip was added (with a little slack for clocks).
     if occurred < datetime.fromisoformat(watch["created_at"]) - timedelta(minutes=5):
         return False
+    category = event["payload"].get("category")
+    if category not in CATEGORIES:  # routine filings are never sent
+        return False
     wanted = watch.get("categories") or []
-    return not wanted or event["payload"].get("category") in wanted
+    return not wanted or category in wanted
+
+
+def is_results_filing(event: dict) -> bool:
+    """A filing that carries the results: the results themselves, a press release on
+    them, or the board meeting outcome that approved them."""
+    p = event.get("payload") or {}
+    if event.get("kind") != "announcement" or p.get("skipped"):
+        return False
+    if p.get("category") == "results":
+        return True
+    about = f"{p.get('bse_subcategory') or ''} {event.get('title') or ''}".lower()
+    return p.get("category") == "board_meeting" and "outcome" in about
+
+
+def _ist_day(event: dict) -> date:
+    return datetime.fromisoformat(event["occurred_at"]).astimezone(IST).date()
+
+
+def repeats_results(event: dict, earlier: list[dict]) -> bool:
+    """Companies file one result several times over (board outcome, results, press
+    release). Only the first of the day is sent; `earlier` are the scrip's filings
+    already fanned out."""
+    if not is_results_filing(event):
+        return False
+    day = _ist_day(event)
+    return any(
+        e.get("id") != event.get("id") and is_results_filing(e) and _ist_day(e) == day for e in earlier
+    )
 
 
 def targets(

@@ -74,6 +74,43 @@ def test_category_filter():
     assert alerts.targets(event, [watch(categories=["other"])], {"u1": [1]}, NOW) == [(1, "u1")]
 
 
+def test_routine_filings_are_never_sent():
+    assert alerts.targets(announcement(category="routine"), [watch()], {"u1": [1]}, NOW) == []
+
+
+def filing(event_id, category="results", sub="Financial Results", title="Results", hours_ago=1, **extra):
+    published = (NOW - timedelta(hours=hours_ago)).isoformat()
+    payload = {"category": category, "bse_subcategory": sub, **extra}
+    return {
+        "id": event_id,
+        "kind": "announcement",
+        "title": title,
+        "occurred_at": published,
+        "payload": payload,
+    }
+
+
+def test_only_the_first_results_filing_of_the_day_is_sent():
+    outcome = filing(1, "board_meeting", "Outcome of Board Meeting", "Outcome of Board Meeting", hours_ago=3)
+    results, press = filing(2, hours_ago=2), filing(3, sub="Press Release / Media Release")
+    assert alerts.is_results_filing(outcome)
+    assert not alerts.repeats_results(outcome, [])
+    assert alerts.repeats_results(results, [outcome])
+    assert alerts.repeats_results(press, [outcome, results])
+    # A skipped repeat does not count as sent, and other filings are never repeats.
+    assert not alerts.repeats_results(
+        results, [{**outcome, "payload": {**outcome["payload"], "skipped": "x"}}]
+    )
+    assert not alerts.repeats_results(filing(4, "investor_meet", "Investor Presentation"), [outcome])
+    intimation = filing(5, "board_meeting", "Board Meeting Intimation", "Board meeting on 5 Nov")
+    assert not alerts.is_results_filing(intimation)
+
+
+def test_results_on_another_day_are_sent_again():
+    yesterday = filing(1, hours_ago=26)
+    assert not alerts.repeats_results(filing(2), [yesterday])
+
+
 def test_old_announcements_and_ones_before_adding_are_skipped():
     old = announcement(published=NOW - timedelta(hours=30))
     assert alerts.targets(old, [watch()], {"u1": [1]}, NOW) == []

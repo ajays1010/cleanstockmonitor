@@ -262,9 +262,29 @@ def fan_out() -> dict:
     return {"events": len(events), "sent": sent, "failed": failed}
 
 
+def _fanned_out_filings(db, event: dict) -> list[dict]:
+    """The scrip's announcements from the last day and a half that were already fanned out."""
+    since = (datetime.fromisoformat(event["occurred_at"]) - timedelta(hours=36)).isoformat()
+    return (
+        db.table("events")
+        .select("id, kind, title, occurred_at, payload")
+        .eq("kind", "announcement")
+        .eq("scrip_id", event["scrip_id"])
+        .gte("occurred_at", since)
+        .not_.is_("fanned_out_at", "null")
+        .execute()
+        .data
+    )
+
+
 def _fan_out_event(db, http, event, watch_by_scrip, chats, now) -> tuple[int, int]:
     """Create one event's deliveries and send them; returns (sent, failed)."""
-    pairs = alerts.targets(event, watch_by_scrip.get(event["scrip_id"], []), chats, now)
+    if alerts.is_results_filing(event) and alerts.repeats_results(event, _fanned_out_filings(db, event)):
+        event["payload"]["skipped"] = "repeat of today's results"
+        _save_payload(event)
+        pairs = []
+    else:
+        pairs = alerts.targets(event, watch_by_scrip.get(event["scrip_id"], []), chats, now)
     pdf = None
     new_rows = []
     if pairs:

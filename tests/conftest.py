@@ -179,6 +179,9 @@ class FakePrices:
     def refresh(self, scrip_id):
         self.refreshed.append(scrip_id)
 
+    def nifty(self):
+        return None
+
 
 @pytest.fixture
 def fakes():

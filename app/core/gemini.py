@@ -18,7 +18,9 @@ from app.core.config import get_settings
 log = logging.getLogger(__name__)
 
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-SUMMARY_CATEGORIES = frozenset({"results", "orders", "board_meeting", "corporate_action", "rating"})
+SUMMARY_CATEGORIES = frozenset(
+    {"results", "orders", "board_meeting", "corporate_action", "rating", "funding"}
+)
 MAX_PDF_BYTES = 14 * 1024 * 1024  # inline requests are capped at 20 MB after base64
 MAX_POINTS = 4
 TONES = ("positive", "neutral", "negative")
@@ -39,8 +41,12 @@ and leave out a comparison the document does not support. Prefer consolidated fi
 both standalone and consolidated are given. Also mention exceptional or one-time items and \
 any dividend declared. Name quarters by the Indian April-March financial year: the quarter \
 ended 30 Sep 2026 is Q2 FY27, 31 Dec 2026 is Q3 FY27, 31 Mar 2027 is Q4 FY27.
+- Business updates and provisional numbers: the figures given (loans, deposits, sales \
+volumes and so on) with their YoY and QoQ change where stated.
 - Orders and contracts: client, order value and timeline; compare with annual revenue only \
 if the document states it.
+- Fund raising and acquisitions: amount, price, instrument or target, stake and \
+consideration, and the purpose.
 - Board meetings: the date and purpose, or the decisions taken.
 - Dividends, splits, bonus, buybacks: ratio or amount per share, and the record date.
 - Credit ratings: agency, instrument, old and new rating, outlook.

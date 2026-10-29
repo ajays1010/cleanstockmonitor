@@ -123,6 +123,8 @@ button.link.danger { color: #dc2626; }
 .price { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 10px 0 0; }
 .price strong { font-size: 1.125rem; font-variant-numeric: tabular-nums; }
 .price .up, .price .down { font-variant-numeric: tabular-nums; }
+.price.market { margin: 0 0 20px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; }
+.price.market > span:first-child { font-weight: 600; }
 
 details summary { cursor: pointer; color: var(--accent); font-size: 0.875rem; }
 .settings { display: flex; flex-direction: column; gap: 16px; margin-top: 12px; align-items: flex-start; }

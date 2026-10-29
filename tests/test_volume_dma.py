@@ -185,3 +185,21 @@ def test_worker_refreshes_stats():
     finally:
         worker.get_settings = original
     assert "update_scrip_stats" in ids
+
+
+def test_nifty_is_cached_and_survives_a_failed_fetch(monkeypatch):
+    from app.core import prices
+
+    calls = []
+
+    def fetch(scrips):
+        calls.append(scrips[0]["fyers_symbol"])
+        return {0: quote(ltp="22936.75", prev="22698.85")} if len(calls) == 1 else {}
+
+    monkeypatch.setattr(prices, "_nifty_cache", (0.0, None))
+    now = datetime(2026, 10, 29, 11, 30, tzinfo=IST)
+    view = prices.nifty_view(now, fetch)
+    assert str(view.ltp) == "22936.75" and round(view.change_pct, 2) == Decimal("1.05")
+    assert prices.nifty_view(now, fetch) == view and calls == ["NSE:NIFTY50-INDEX"]  # cached
+    monkeypatch.setattr(prices, "_nifty_cache", (0.0, prices._nifty_cache[1]))  # expire it
+    assert prices.nifty_view(now, fetch) == view and len(calls) == 2  # last good value kept

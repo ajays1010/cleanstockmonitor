@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 
 import httpx
 
+from app.core.categories import ROUTINE
 from app.core.timeutil import IST, now_ist
 from app.sources import BROWSER_USER_AGENT
 
@@ -41,28 +42,62 @@ class Announcement:
     bse_subcategory: str
     published_at: datetime  # aware, IST
     pdf_url: str | None
-    category: str  # one of app.core.categories.CATEGORIES
+    category: str  # a key of app.core.categories.CATEGORIES, or ROUTINE
 
 
 _ORDERS = re.compile(r"\b(orders?|contracts?|letter of award|loa|work order)\b")
 _NOT_ORDERS = re.compile(r"\bin order to\b|\bcourt order\b|\border of (the )?(nclt|court|tribunal)\b")
 _CORP_ACTION = re.compile(r"\b(dividend|bonus|split|sub-division|buy-?back|rights issue|record date)\b")
-_INVESTOR = re.compile(r"earnings call|investor presentation|analyst|investor meet|con(\.|ference)? call")
+_INVESTOR = re.compile(
+    r"earnings call|investor presentation|analyst|investor meet|con(\.|ference)? call|transcript"
+)
+# Filings nobody needs on their phone: results ads in newspapers, ESOP grants, call
+# recordings, trading-window and compliance paperwork. Stored, never sent.
+_ROUTINE = re.compile(
+    r"newspaper|\bes(op|os|ps)s?\b|employee stock|stock option|recording|audio|video link"
+    r"|trading window|74\s*\(5\)|compliance certificate|(loss|duplicate)( of)? share certificate"
+    r"|issue of duplicate"
+)
+# Monthly or quarterly business updates and provisional numbers count as results.
+_BUSINESS_UPDATE = re.compile(r"business update|operational update|provisional|sales update|monthly sales")
+_FUNDING = re.compile(
+    r"\bqip\b|qualified institution|preferential (issue|allotment)|fund ?rais|acqui(re|sition)"
+    r"|amalgamation|\bmerger\b|demerger|scheme of arrangement"
+)
+_NOT_FUNDING = re.compile(r"substantial acquisition|\bsast\b|regulation 29|reg\.? 29")
+_MANAGEMENT = re.compile(
+    r"(appoint|resign|cessation|re-designat|change in)\w*.*\b(ceo|cfo|chief|managing director"
+    r"|whole[- ]time director|key managerial|kmp|management)\b"
+    r"|\b(ceo|cfo|chief \w+ officer|managing director)\b.*(appoint|resign|cessation)"
+)
+
+# BSE subcategory text that settles the category outright.
+_SUB_ROUTINE = ("newspaper", "esop", "esos", "esps", "trading window", "74(5)", "certificate")
+_SUB_MANAGEMENT = ("change in directorate", "change in management", "resignation", "appointment")
 
 
 def classify(bse_category: str, subcategory: str, headline: str) -> str:
-    """Map BSE's category, subcategory and headline to one of our category keys."""
+    """Map BSE's category, subcategory and headline to one of our category keys, or
+    ROUTINE for filings that are never sent. BSE's subcategory is trusted first:
+    results ads and call recordings mention "financial results" too."""
     cat, sub, text = bse_category.lower(), subcategory.lower(), headline.lower()
-    if cat == "result" or "financial result" in sub or "financial result" in text:
+    both = f"{sub} {text}"
+    if any(k in sub for k in _SUB_ROUTINE) or _ROUTINE.search(both):
+        return ROUTINE
+    if any(k in sub for k in ("investor", "analyst", "earnings call")) or _INVESTOR.search(text):
+        return "investor_meet"
+    if cat == "result" or "financial result" in both or _BUSINESS_UPDATE.search(both):
         return "results"
     if "rating" in sub or "credit rating" in text:
         return "rating"
-    if any(k in sub for k in ("investor", "analyst", "earnings call")) or _INVESTOR.search(text):
-        return "investor_meet"
     if "order" in sub or (_ORDERS.search(text) and not _NOT_ORDERS.search(text)):
         return "orders"
     if cat == "corp. action" or _CORP_ACTION.search(text):
         return "corporate_action"
+    if _FUNDING.search(both) and not _NOT_FUNDING.search(both):
+        return "funding"
+    if any(k in sub for k in _SUB_MANAGEMENT) or _MANAGEMENT.search(text):
+        return "management"
     if cat == "board meeting" or "board meeting" in text:
         return "board_meeting"
     return "other"

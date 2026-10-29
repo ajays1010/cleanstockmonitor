@@ -1,10 +1,12 @@
 """Prices for the dashboard, read from price_snapshots (kept fresh by the price job).
 
-Opening the dashboard never calls a quote provider. The only outside call is a single
-quote when a scrip is added, so its card has a price before the next 5-minute poll.
+Opening the dashboard calls a quote provider only for the Nifty 50 strip, and at most
+once a minute (cached per process), plus a single quote when a scrip is added, so its
+card has a price before the next 5-minute poll.
 """
 
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -85,3 +87,29 @@ class PriceStore:
                     refresh_one(self._db_factory, scrip_id, rows[0].get("yahoo_symbol"), http)
         except Exception:
             log.exception("Could not refresh the price of scrip %s", scrip_id)
+
+    def nifty(self) -> PriceView | None:
+        return nifty_view(now_ist())
+
+
+NIFTY = {"id": 0, "yahoo_symbol": "^NSEI", "fyers_symbol": "NSE:NIFTY50-INDEX"}
+NIFTY_TTL_LIVE = 60  # seconds; the dashboard polls every 60 s in the session
+NIFTY_TTL_CLOSED = 30 * 60
+_nifty_cache: tuple[float, dict | None] = (0.0, None)  # (monotonic fetch time, snapshot)
+
+
+def nifty_view(now: datetime, fetch: Callable[[list[dict]], dict] = fetch_quotes) -> PriceView | None:
+    """The Nifty 50 for the dashboard strip. A failed fetch is cached too, so a provider
+    outage costs one call a minute rather than one per page view."""
+    global _nifty_cache
+    fetched_at, snapshot = _nifty_cache
+    ttl = NIFTY_TTL_LIVE if is_market_open(now, set()) else NIFTY_TTL_CLOSED
+    if snapshot is None or time.monotonic() - fetched_at > ttl:
+        try:
+            quote = fetch([NIFTY]).get(NIFTY["id"])
+        except Exception:
+            log.exception("Could not fetch the Nifty 50")
+            quote = None
+        snapshot = snapshot_row(NIFTY["id"], quote) if quote else snapshot
+        _nifty_cache = (time.monotonic(), snapshot)
+    return price_view(snapshot, now) if snapshot else None

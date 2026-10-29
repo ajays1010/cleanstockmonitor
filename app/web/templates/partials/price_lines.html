@@ -1,3 +1,4 @@
 {% set oob = true %}
+{% include "partials/market_line.html" %}
 {% for item in items %}{% include "partials/price_line.html" %}{% endfor %}
 {% include "partials/price_poller.html" %}
