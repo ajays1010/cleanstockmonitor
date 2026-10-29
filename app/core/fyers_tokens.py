@@ -31,12 +31,7 @@ class TokenStore:
             return None
         r = rows[0]
         return Tokens(
-            access_token=r["access_token"],
-            refresh_token=r.get("refresh_token"),
-            access_expires_at=datetime.fromisoformat(r["access_expires_at"]),
-            refresh_expires_at=datetime.fromisoformat(r["refresh_expires_at"])
-            if r.get("refresh_expires_at")
-            else None,
+            access_token=r["access_token"], access_expires_at=datetime.fromisoformat(r["access_expires_at"])
         )
 
     def access_token(self, now: datetime) -> str | None:
@@ -49,11 +44,10 @@ class TokenStore:
             {
                 "provider": PROVIDER,
                 "access_token": tokens.access_token,
-                "refresh_token": tokens.refresh_token,
                 "access_expires_at": tokens.access_expires_at.isoformat(),
-                "refresh_expires_at": tokens.refresh_expires_at.isoformat()
-                if tokens.refresh_expires_at
-                else None,
+                # Unused since Fyers disabled refreshing; cleared so no stale credential lingers.
+                "refresh_token": None,
+                "refresh_expires_at": None,
                 "updated_at": now.isoformat(),
             },
             on_conflict="provider",

@@ -11,19 +11,17 @@
       <p class="muted">Add <code>FYERS_APP_ID</code> and <code>FYERS_SECRET</code> to the server settings. Until then prices come from Yahoo.</p>
     {% else %}
       {% if token_live %}
-        <p><strong>Connected.</strong> Prices come from Fyers.</p>
-      {% elif tokens %}
-        <p><strong>Token expired.</strong> Prices come from Yahoo until the morning refresh or a new login.</p>
+        <p><strong>Connected for today ✅</strong> Prices come from Fyers until {{ fmt(tokens.access_expires_at) }}.</p>
       {% else %}
-        <p><strong>Not connected.</strong> Prices come from Yahoo.</p>
+        <p><strong>Not connected today.</strong> Prices come from Yahoo until you connect.</p>
+        <p><a class="button small" href="/admin/fyers/connect">Connect Fyers for today</a></p>
       {% endif %}
       <table class="facts">
-        <tr><th>Access token valid until</th><td>{{ fmt(tokens.access_expires_at) if tokens else "—" }}</td></tr>
-        <tr><th>Refresh token valid until</th><td>{{ fmt(tokens.refresh_expires_at) if tokens else "—" }}</td></tr>
         <tr><th>Redirect URL in the Fyers app</th><td><code class="copyable">{{ redirect_uri }}</code></td></tr>
       </table>
-      <p><a class="button small" href="/admin/fyers/connect">{{ "Log in to Fyers again" if tokens else "Connect Fyers" }}</a></p>
-      <p class="muted small">A new access token is fetched every morning at 06:45 with the refresh token and your PIN, so a login is needed about every 15 days. You will get a Telegram message when it is.</p>
+      <p class="muted small">Fyers sessions end at 06:30 each morning and, under SEBI's rules, can only be
+        renewed by logging in yourself (OTP and PIN on Fyers' page). On trading days you get a Telegram
+        reminder at 08:45 if you haven't connected yet; on days you skip it, Yahoo covers prices.</p>
     {% endif %}
   </section>
 

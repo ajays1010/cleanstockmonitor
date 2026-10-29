@@ -7,7 +7,7 @@ from datetime import datetime, time, timedelta
 
 from app.core.config import get_settings
 from app.core.timeutil import IST, now_ist
-from app.jobs.fyers_refresh import notify_admins
+from app.jobs.notify import notify_admins
 from app.jobs.runner import last_success, tracked
 
 ANNOUNCEMENTS_STALE = timedelta(minutes=15)

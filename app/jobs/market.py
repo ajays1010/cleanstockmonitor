@@ -59,7 +59,7 @@ def _insert_events(events: list[dict]) -> int:
     return len(inserted)
 
 
-def _holidays() -> set[date]:
+def market_holidays() -> set[date]:
     rows = get_db().table("app_settings").select("value").eq("key", "market_holidays").execute().data
     return {date.fromisoformat(d) for d in (rows[0]["value"] if rows else [])}
 
@@ -157,7 +157,7 @@ def poll_nse_announcements() -> dict:
 def poll_prices() -> dict:
     now = now_ist()
     end = now.replace(hour=PRICE_WINDOW_END[0], minute=PRICE_WINDOW_END[1], second=0, microsecond=0)
-    if now.weekday() >= 5 or now.date() in _holidays() or not (MARKET_OPEN <= now.time() <= end.time()):
+    if now.weekday() >= 5 or now.date() in market_holidays() or not (MARKET_OPEN <= now.time() <= end.time()):
         return {"skipped": "market closed"}
 
     rows = _watchlist()
@@ -301,7 +301,7 @@ def retry_failed() -> dict:
 @tracked("daily_summary")
 def daily_summary() -> dict:
     today = now_ist().date()
-    if today.weekday() >= 5 or today in _holidays():
+    if today.weekday() >= 5 or today in market_holidays():
         return {"skipped": "not a trading day"}
     db = get_db()
     start = datetime.combine(today, datetime.min.time(), tzinfo=IST)

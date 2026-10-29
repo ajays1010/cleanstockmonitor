@@ -27,7 +27,6 @@ class Settings(BaseSettings):
 
     fyers_app_id: str = ""
     fyers_secret: SecretStr = SecretStr("")
-    fyers_pin: SecretStr = SecretStr("")
     # Must match the redirect URL saved in the Fyers app; defaults to APP_BASE_URL/admin/fyers/callback.
     fyers_redirect_uri: str = ""
 

@@ -11,7 +11,7 @@ from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.core.timeutil import IST
 from app.jobs import market
-from app.jobs.fyers_refresh import refresh_fyers_token
+from app.jobs.fyers_reminder import fyers_reminder
 from app.jobs.heartbeat import heartbeat
 from app.jobs.scrips import sync_scrips
 from app.jobs.watchdog import bse_watchdog
@@ -52,8 +52,9 @@ def build_scheduler() -> BlockingScheduler:
         market.daily_summary, "cron", hour=16, minute=0, day_of_week="mon-fri", id="daily_summary"
     )
     scheduler.add_job(market.cleanup, "cron", hour=2, minute=0, id="cleanup")
-    # Fyers access tokens expire at 06:30 IST; mint a fresh one before the market opens.
-    scheduler.add_job(refresh_fyers_token, "cron", hour=6, minute=45, id="refresh_fyers_token")
+    # Fyers sessions end at 06:30 IST and can no longer be refreshed (SEBI rules): nudge
+    # the admin to log in before the open; Yahoo covers any day without a login.
+    scheduler.add_job(fyers_reminder, "cron", hour=8, minute=45, day_of_week="mon-fri", id="fyers_reminder")
     return scheduler
 
 

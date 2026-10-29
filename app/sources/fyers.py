@@ -1,13 +1,12 @@
-"""Fyers API v3: login, token refresh, batched quotes, and the public symbol master.
+"""Fyers API v3: login, batched quotes, and the public symbol master.
 
-Login is a browser redirect: the admin signs in at Fyers, Fyers sends an auth code to our
-callback, and we exchange it for an access token (valid until 06:30 IST the next day)
-and a refresh token. Each morning the refresh token plus the account PIN mints a new
-access token, so the admin only logs in again when the refresh token lapses.
+Login is a browser redirect: the admin signs in at Fyers (OTP and PIN, on Fyers' own
+page), Fyers sends an auth code to our callback, and we exchange it for an access token
+valid until 06:30 IST the next day. Since 2026 Fyers has disabled its refresh-token API
+to comply with SEBI's rules, so each trading day needs a fresh login by the admin; on
+days without one, prices come from Yahoo (app/core/quote_source.py).
 
-Hosts and fields follow the v3 docs and the official fyers-apiv3 SDK (3.2.0). The
-refresh call is not in either; it follows Fyers' published refresh flow and falls back
-to asking the admin to log in again if Fyers rejects it.
+Hosts and fields follow the v3 docs and the official fyers-apiv3 SDK (3.2.0).
 """
 
 import csv
@@ -34,7 +33,6 @@ SYMBOL_FILES = {
 }
 MAX_SYMBOLS_PER_CALL = 50  # Standard plan
 TOKEN_EXPIRY_TIME = (6, 30)  # access tokens expire daily at 06:30 IST
-REFRESH_TOKEN_LIFETIME = timedelta(days=15)
 # NSE equity series in the symbol master; the rest are bonds, G-secs, MFs and so on.
 NSE_EQUITY_SERIES = {"EQ", "BE", "BZ", "SM", "ST"}
 
@@ -46,9 +44,7 @@ class FyersError(Exception):
 @dataclass(frozen=True)
 class Tokens:
     access_token: str
-    refresh_token: str | None
     access_expires_at: datetime
-    refresh_expires_at: datetime | None
 
 
 def app_id_hash(app_id: str, secret: str) -> str:
@@ -93,25 +89,8 @@ class FyersClient:
                 "code": auth_code,
             },
         )
-        return Tokens(
-            access_token=data["access_token"],
-            refresh_token=data.get("refresh_token"),
-            access_expires_at=next_expiry(now),
-            refresh_expires_at=now + REFRESH_TOKEN_LIFETIME if data.get("refresh_token") else None,
-        )
-
-    def refresh(self, refresh_token: str, pin: str, now: datetime) -> str:
-        """A new access token from the refresh token and the account PIN."""
-        data = self._post(
-            "/validate-refresh-token",
-            {
-                "grant_type": "refresh_token",
-                "appIdHash": app_id_hash(self.app_id, self.secret),
-                "refresh_token": refresh_token,
-                "pin": pin,
-            },
-        )
-        return data["access_token"]
+        # Fyers also returns a refresh token; it is useless now that refreshing is disabled.
+        return Tokens(access_token=data["access_token"], access_expires_at=next_expiry(now))
 
     def quotes(self, symbols: list[str], access_token: str) -> dict[str, Quote]:
         out: dict[str, Quote] = {}

@@ -2,6 +2,7 @@ import hashlib
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
+from unittest.mock import MagicMock
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -54,28 +55,51 @@ def test_exchange_code_sends_hash_and_returns_tokens():
     assert seen["url"] == "https://api-t1.fyers.in/api/v3/validate-authcode"
     assert seen["grant_type"] == "authorization_code" and seen["code"] == "the-code"
     assert seen["appIdHash"] == hashlib.sha256(b"ABC123-100:secret").hexdigest()
-    assert (t.access_token, t.refresh_token) == ("acc", "ref")
+    assert t.access_token == "acc"  # the refresh token Fyers also sends is not kept
     assert t.access_expires_at == datetime(2026, 10, 28, 6, 30, tzinfo=IST)
-    assert (t.refresh_expires_at - NOW).days == 15
-
-
-def test_refresh_sends_pin():
-    seen = {}
-
-    def handler(req):
-        seen.update(json.loads(req.content), url=str(req.url))
-        return httpx.Response(200, json={"s": "ok", "access_token": "new"})
-
-    assert client(handler).refresh("ref", "1234", NOW) == "new"
-    assert seen["url"].endswith("/validate-refresh-token")
-    assert (seen["grant_type"], seen["refresh_token"], seen["pin"]) == ("refresh_token", "ref", "1234")
 
 
 def test_errors_raise():
-    with pytest.raises(FyersError, match="-16"):
-        client(lambda r: httpx.Response(401, json={"s": "error", "code": -16, "message": "bad"})).refresh(
-            "r", "p", NOW
-        )
+    reply = httpx.Response(400, json={"s": "error", "code": -413, "message": "invalid auth code"})
+    with pytest.raises(FyersError, match="-413 invalid auth code"):
+        client(lambda r: reply).exchange_code("bad", NOW)
+
+
+# ---- morning reminder
+
+
+@pytest.fixture
+def reminder(monkeypatch):
+    from app.jobs import fyers_reminder as fr
+
+    sent = []
+    state = {"now": datetime(2026, 10, 29, 8, 45, tzinfo=IST), "token": None, "holidays": set()}
+    monkeypatch.setattr(fr, "now_ist", lambda: state["now"])
+    monkeypatch.setattr(fr, "fyers_client", lambda: FakeFyers())
+    monkeypatch.setattr(fr, "TokenStore", lambda _: FakeTokens(state["token"]))
+    monkeypatch.setattr(fr, "market_holidays", lambda: state["holidays"])
+    monkeypatch.setattr(fr, "notify_admins", sent.append)
+    monkeypatch.setattr(fr, "get_db", lambda: None)
+    monkeypatch.setattr("app.jobs.runner.get_db", MagicMock)  # job_runs bookkeeping
+    return fr, state, sent
+
+
+def test_reminder_sent_on_trading_days_without_a_login(reminder):
+    fr, state, sent = reminder
+    fr.fyers_reminder()
+    assert len(sent) == 1 and "/admin/fyers/connect" in sent[0] and "Yahoo" in sent[0]
+
+
+def test_no_reminder_when_connected_weekend_or_holiday(reminder):
+    fr, state, sent = reminder
+    state["token"] = "tok"
+    fr.fyers_reminder()
+    state["token"], state["now"] = None, datetime(2026, 10, 31, 8, 45, tzinfo=IST)  # Saturday
+    fr.fyers_reminder()
+    state["now"] = datetime(2026, 11, 9, 8, 45, tzinfo=IST)
+    state["holidays"] = {state["now"].date()}
+    fr.fyers_reminder()
+    assert sent == []
 
 
 SAMPLE = {
