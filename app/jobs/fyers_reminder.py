@@ -2,6 +2,7 @@
 SEBI's rules, so each trading day's session starts with the admin logging in (OTP and PIN
 on Fyers' page). Without that, prices simply come from Yahoo for the day."""
 
+from app.core import fyers_link
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.fyers_tokens import TokenStore, fyers_client
@@ -11,11 +12,12 @@ from app.jobs.notify import notify_admins
 from app.jobs.runner import tracked
 
 
-def reminder_text(base_url: str) -> str:
-    url = base_url.rstrip("/") + "/admin/fyers/connect"
+def reminder_text(base_url: str, token: str) -> str:
+    url = base_url.rstrip("/") + "/admin/fyers/start?t=" + token
     return (
-        f'🔑 <a href="{url}">Connect Fyers for today</a>: tap, then enter the OTP and your PIN. '
-        "Until then prices come from Yahoo."
+        f'🔑 <a href="{url}">Connect Fyers for today</a>: tap, then enter your phone number, '
+        "the OTP and your PIN on Fyers' page. The link works only today; until you connect, "
+        "prices come from Yahoo."
     )
 
 
@@ -28,5 +30,5 @@ def fyers_reminder() -> dict:
         return {"skipped": "not a trading day"}
     if TokenStore(get_db).access_token(now):
         return {"skipped": "already connected"}
-    notify_admins(reminder_text(get_settings().app_base_url))
+    notify_admins(reminder_text(get_settings().app_base_url, fyers_link.make_token(now.date())))
     return {"sent": True}

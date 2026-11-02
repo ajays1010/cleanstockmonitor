@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Fyers · StockMonitor{% endblock %}
+{% block content %}
+  <section class="card narrow">
+    {% if ok %}
+      <h1>Fyers connected ✅</h1>
+      <p>Prices come from Fyers for today. You can close this window.</p>
+    {% else %}
+      <h1>Fyers not connected</h1>
+      <p class="error" role="alert">{{ error }}</p>
+      <p class="muted">Use the link in today's Telegram reminder, or <a href="/admin">the admin page</a>.</p>
+    {% endif %}
+  </section>
+{% endblock %}

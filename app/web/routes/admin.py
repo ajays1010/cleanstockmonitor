@@ -8,11 +8,20 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.core import fyers_link
 from app.core.fyers_tokens import TokenStore
 from app.core.profiles import Profile
-from app.core.timeutil import IST
+from app.core.timeutil import IST, now_ist
 from app.sources.fyers import FyersClient, FyersError
-from app.web.deps import get_fyers, get_job_runs, get_tokens, require_admin
+from app.web.deps import (
+    AdminRequired,
+    LoginRequired,
+    get_fyers,
+    get_job_runs,
+    get_tokens,
+    optional_user,
+    require_admin,
+)
 from app.web.templating import templates
 
 router = APIRouter(prefix="/admin")
@@ -22,6 +31,7 @@ FyersDep = Annotated[FyersClient, Depends(get_fyers)]
 TokensDep = Annotated[TokenStore, Depends(get_tokens)]
 
 STATE_KEY = "fyers_state"
+LINK_KEY = "fyers_via_link"  # login started from the reminder's signed link
 
 
 def _page(request: Request, user, fyers, tokens, runs, message=None, error=None, status_code=200):
@@ -64,10 +74,30 @@ def fyers_connect(request: Request, user: AdminDep, fyers: FyersDep):
     return RedirectResponse(fyers.login_url(state), status_code=303)
 
 
+def _link_page(request: Request, error: str | None = None):
+    return templates.TemplateResponse(
+        request,
+        "fyers_link.html",
+        {"user": None, "ok": error is None, "error": error},
+        status_code=200 if error is None else 400,
+    )
+
+
+@router.get("/fyers/start", response_class=HTMLResponse)
+def fyers_start(request: Request, fyers: FyersDep, t: str = ""):
+    """The morning reminder's link: no site sign-in, straight to Fyers' login."""
+    if not fyers.configured or not fyers_link.check_token(t, now_ist().date()):
+        return _link_page(request, "This link has expired; each reminder's link works only on its day.")
+    state = secrets.token_urlsafe(16)
+    request.session[STATE_KEY] = state
+    request.session[LINK_KEY] = True
+    return RedirectResponse(fyers.login_url(state), status_code=303)
+
+
 @router.get("/fyers/callback", response_class=HTMLResponse)
 def fyers_callback(
     request: Request,
-    user: AdminDep,
+    user: Annotated[Profile | None, Depends(optional_user)],
     fyers: FyersDep,
     tokens: TokensDep,
     runs: Annotated[Callable[[], list[dict]], Depends(get_job_runs)],
@@ -76,6 +106,18 @@ def fyers_callback(
     state: str | None = None,
 ):
     expected = request.session.pop(STATE_KEY, None)
+    via_link = request.session.pop(LINK_KEY, False)
+    if not (user and user.is_admin):
+        if not via_link:
+            raise AdminRequired() if user else LoginRequired(request.url.path)
+        # Started from the reminder's link in a browser not signed in here.
+        if not expected or state != expected or not auth_code:
+            return _link_page(request, "Fyers login was cancelled or expired.")
+        try:
+            tokens.save(fyers.exchange_code(auth_code, datetime.now(UTC)), datetime.now(UTC))
+        except FyersError as exc:
+            return _link_page(request, f"Fyers refused the login: {exc}")
+        return _link_page(request)
     # Fyers sends the auth code as auth_code; `code` there is a status number.
     if not expected or state != expected or not auth_code:
         return _page(

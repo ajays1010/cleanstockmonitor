@@ -58,7 +58,7 @@ def build_scheduler() -> BlockingScheduler:
     scheduler.add_job(update_scrip_stats, "cron", hour="8,18", minute=30, id="update_scrip_stats")
     # Fyers sessions end at 06:30 IST and can no longer be refreshed (SEBI rules): nudge
     # the admin to log in before the open; Yahoo covers any day without a login.
-    scheduler.add_job(fyers_reminder, "cron", hour=8, minute=45, day_of_week="mon-fri", id="fyers_reminder")
+    scheduler.add_job(fyers_reminder, "cron", hour=8, minute=0, day_of_week="mon-fri", id="fyers_reminder")
     return scheduler
 
 

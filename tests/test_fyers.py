@@ -87,7 +87,7 @@ def reminder(monkeypatch):
 def test_reminder_sent_on_trading_days_without_a_login(reminder):
     fr, state, sent = reminder
     fr.fyers_reminder()
-    assert len(sent) == 1 and "/admin/fyers/connect" in sent[0] and "Yahoo" in sent[0]
+    assert len(sent) == 1 and "/admin/fyers/start?t=" in sent[0] and "Yahoo" in sent[0]
 
 
 def test_no_reminder_when_connected_weekend_or_holiday(reminder):
@@ -309,3 +309,67 @@ def test_fyers_callback_shows_refusal(admin_client):
     state = parse_qs(urlparse(start.headers["location"]).query)["state"][0]
     resp = c.get("/admin/fyers/callback", params={"auth_code": "bad", "state": state})
     assert resp.status_code == 400 and "invalid auth code" in resp.text
+
+
+# ---- the reminder's signed link: no site sign-in needed
+
+
+@pytest.fixture
+def link_client(client, monkeypatch):
+    from app.core import fyers_link
+    from app.web.deps import get_fyers, get_job_runs, get_tokens
+    from app.web.routes import admin
+
+    store = FakeTokenStore()
+
+    def handler(req):
+        if json.loads(req.content).get("code") == "good":
+            return httpx.Response(200, json={"s": "ok", "access_token": "acc", "refresh_token": "ref"})
+        return httpx.Response(400, json={"s": "error", "code": -413, "message": "invalid auth code"})
+
+    client.app.dependency_overrides[get_fyers] = lambda: client_for(handler)
+    client.app.dependency_overrides[get_tokens] = lambda: store
+    client.app.dependency_overrides[get_job_runs] = lambda: lambda: []
+    today = datetime(2026, 11, 2, 8, 0, tzinfo=IST)
+    monkeypatch.setattr(admin, "now_ist", lambda: today)
+    return client, store, fyers_link.make_token(today.date())
+
+
+def client_for(handler):  # the `client` fixture shadows the helper inside link_client
+    return client(handler)
+
+
+def _start(c, token):
+    resp = c.get("/admin/fyers/start", params={"t": token}, follow_redirects=False)
+    assert resp.status_code == 303
+    return parse_qs(urlparse(resp.headers["location"]).query)["state"][0]
+
+
+def test_reminder_link_connects_without_signing_in(link_client):
+    c, store, token = link_client
+    state = _start(c, token)
+    resp = c.get("/admin/fyers/callback", params={"auth_code": "good", "state": state})
+    assert resp.status_code == 200 and "Fyers connected" in resp.text and store.saved.access_token == "acc"
+
+
+def test_reminder_link_shows_fyers_refusal(link_client):
+    c, store, token = link_client
+    state = _start(c, token)
+    resp = c.get("/admin/fyers/callback", params={"auth_code": "bad", "state": state})
+    assert resp.status_code == 400 and "invalid auth code" in resp.text and store.saved is None
+
+
+def test_old_or_forged_links_are_refused(link_client):
+    from app.core import fyers_link
+
+    c, store, _ = link_client
+    yesterday = fyers_link.make_token(datetime(2026, 11, 1).date())
+    for token in (yesterday, "forged", ""):
+        resp = c.get("/admin/fyers/start", params={"t": token}, follow_redirects=False)
+        assert resp.status_code == 400 and "expired" in resp.text
+
+
+def test_callback_without_the_link_still_needs_sign_in(link_client):
+    c, store, _ = link_client
+    resp = c.get("/admin/fyers/callback", params={"auth_code": "good", "state": "x"}, follow_redirects=False)
+    assert resp.status_code in (302, 303) and store.saved is None
